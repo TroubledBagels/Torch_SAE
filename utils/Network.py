@@ -2,6 +2,12 @@ import torch
 import snntorch
 import snntorch.surrogate
 import torch.nn as nn
+import torch.nn.functional as F
+
+def surrogate_step(x, threshold=0.5, slope=25):
+    hard = (x >= threshold).float()
+    soft = torch.sigmoid(slope * (x - threshold))
+    return (hard - soft).detach() + soft
 
 class SingleLayerAutoencoder(nn.Module):
     def __init__(self, input_size, hidden_size):
@@ -9,9 +15,9 @@ class SingleLayerAutoencoder(nn.Module):
 
         self.sur_grad = snntorch.surrogate.fast_sigmoid(slope=25)
 
-        self.encoder = nn.Linear(input_size, hidden_size)
+        self.encoder = nn.Linear(input_size, hidden_size, bias=False)
         self.lif1 = snntorch.Leaky(beta=0.9, spike_grad=self.sur_grad)
-        self.decoder = nn.Linear(hidden_size, input_size)
+        self.decoder = nn.Linear(hidden_size, input_size, bias=False)
         self.lif2 = snntorch.Leaky(beta=0.9, spike_grad=self.sur_grad)
 
     def forward(self, x, ret_lat=False):
@@ -33,8 +39,11 @@ class SingleLayerAutoencoder(nn.Module):
 
         return torch.stack(spk_out, dim=2)
 
+    def get_total_layers(self):
+        return 2
+
 class MultilayerAE(nn.Module):
-    def __init__(self, input_size, hidden_sizes):
+    def __init__(self, input_size, hidden_sizes, beta=0.9, threshold=1):
         super(MultilayerAE, self).__init__()
 
         self.sur_grad = snntorch.surrogate.fast_sigmoid(slope=25)
@@ -47,18 +56,18 @@ class MultilayerAE(nn.Module):
         prev_size = input_size
         for hidden_size in hidden_sizes:
             self.encoder_layers.append(nn.Linear(prev_size, hidden_size))
-            self.lif_layers.append(snntorch.Leaky(beta=0.9, spike_grad=self.sur_grad))
+            self.lif_layers.append(snntorch.Leaky(beta=beta, spike_grad=self.sur_grad, threshold=threshold))
             prev_size = hidden_size
 
         # Decoder
         for hidden_size in reversed(hidden_sizes[:-1]):
             self.decoder_layers.append(nn.Linear(prev_size, hidden_size))
-            self.lif_layers.append(snntorch.Leaky(beta=0.9, spike_grad=self.sur_grad))
+            self.lif_layers.append(snntorch.Leaky(beta=beta, spike_grad=self.sur_grad, threshold=threshold))
             prev_size = hidden_size
 
         # Final decoder layer
         self.decoder_layers.append(nn.Linear(prev_size, input_size))
-        self.lif_layers.append(snntorch.Leaky(beta=0.9, spike_grad=self.sur_grad))
+        self.lif_layers.append(snntorch.Leaky(beta=beta, spike_grad=self.sur_grad, threshold=threshold))
 
     def forward(self, x, ret_lat=False):
         mems = [lif.init_leaky() for lif in self.lif_layers]
@@ -134,6 +143,7 @@ class RecurrentSingleLayerAutoencoder(nn.Module):
 
             spk_lat.append(spk1)
             spk_out.append(spk2)
+            # spk_out.append(F.sigmoid(cur2))
 
         spk_out = torch.stack(spk_out, dim=2)
         spk_lat = torch.stack(spk_lat, dim=2)
@@ -143,8 +153,11 @@ class RecurrentSingleLayerAutoencoder(nn.Module):
 
         return spk_out
 
+    def get_total_layers(self):
+        return 2
+
 class RecurrentSpikingAutoencoder(nn.Module):
-    def __init__(self, input_size, recurrent_size, encoder_sizes, decoder_sizes, beta=0.9):
+    def __init__(self, input_size, recurrent_size, encoder_sizes, decoder_sizes, beta=0.9, multiply_weights=False, threshold=1.0):
         super().__init__()
 
         self.sur_grad = snntorch.surrogate.fast_sigmoid(slope=25)
@@ -156,11 +169,13 @@ class RecurrentSpikingAutoencoder(nn.Module):
 
         for size in encoder_sizes:
             self.encoder_layers.append(nn.Linear(prev_size, size))
-            self.encoder_lifs.append(snntorch.Leaky(beta=beta, spike_grad=self.sur_grad))
+            if multiply_weights:
+                self.encoder_layers[-1].weight.data = self.encoder_layers[-1].weight.data * 10
+            self.encoder_lifs.append(snntorch.Leaky(beta=beta, spike_grad=self.sur_grad, threshold=threshold))
             prev_size = size
 
         self.recurrent_linear = nn.Linear(prev_size, recurrent_size)
-        self.recurrent_lif = snntorch.RLeaky(beta=beta, linear_features=recurrent_size, spike_grad=self.sur_grad)
+        self.recurrent_lif = snntorch.RLeaky(beta=beta, linear_features=recurrent_size, spike_grad=self.sur_grad, threshold=threshold)
 
         self.decoder_layers = nn.ModuleList()
         self.decoder_lifs = nn.ModuleList()
@@ -169,11 +184,13 @@ class RecurrentSpikingAutoencoder(nn.Module):
 
         for size in decoder_sizes:
             self.decoder_layers.append(nn.Linear(prev_size, size))
-            self.decoder_lifs.append(snntorch.Leaky(beta=beta, spike_grad=self.sur_grad))
+            if multiply_weights:
+                self.decoder_layers[-1].weight.data = self.decoder_layers[-1].weight.data * 10
+            self.decoder_lifs.append(snntorch.Leaky(beta=beta, spike_grad=self.sur_grad, threshold=threshold))
             prev_size = size
 
         self.output_layer = nn.Linear(prev_size, input_size)
-        self.output_lif = snntorch.Leaky(beta=beta, spike_grad=self.sur_grad)
+        self.output_lif = snntorch.Leaky(beta=beta, spike_grad=self.sur_grad, threshold=threshold)
 
     def forward(self, x, ret_lat=False):
         encoder_mems = [lif.init_leaky() for lif in self.encoder_lifs]
@@ -233,3 +250,155 @@ class RecurrentSpikingAutoencoder(nn.Module):
         for layer in self.encoder_layers + [self.recurrent_linear] + self.decoder_layers:
             for param in layer.parameters():
                 param.requires_grad = False
+
+class RecurrentTanhAutoencoder(nn.Module):
+    def __init__(self, input_size, recurrent_size, encoder_sizes, decoder_sizes):
+        super().__init__()
+
+        self.recurrent_size = recurrent_size
+
+        self.encoder_layers = nn.ModuleList()
+
+        prev_size = input_size
+        for size in encoder_sizes:
+            self.encoder_layers.append(nn.Linear(prev_size, size))
+            prev_size = size
+
+        self.recurrent = nn.RNNCell(prev_size, recurrent_size, nonlinearity="tanh")
+
+        self.decoder_layers = nn.ModuleList()
+
+        prev_size = recurrent_size
+        for size in decoder_sizes:
+            self.decoder_layers.append(nn.Linear(prev_size, size))
+            prev_size = size
+
+        self.output_layer = nn.Linear(prev_size, input_size)
+
+    def forward(self, x, ret_lat=False):
+        batch_size = x.size(0)
+        h = torch.zeros(batch_size, self.recurrent_size, device=x.device)
+
+        latents = []
+        outputs = []
+
+        for t in range(x.size(2)):
+            out = x[:, :, t]
+
+            for layer in self.encoder_layers:
+                out = torch.tanh(layer(out))
+
+            h = self.recurrent(out, h)
+            latents.append(h)
+
+            out = h
+
+            for layer in self.decoder_layers:
+                out = torch.tanh(layer(out))
+
+            out = self.output_layer(out)
+            outputs.append(out)
+
+        outputs = torch.stack(outputs, dim=2)
+        latents = torch.stack(latents, dim=2)
+
+        if ret_lat:
+            return outputs, latents
+
+        return outputs
+
+    def get_total_layers(self):
+        return len(self.encoder_layers) + len(self.decoder_layers) + 1
+
+def step_threshold(x, threshold=0.5):
+    return (x >= threshold).float()
+
+class StepRNNCell(nn.Module):
+    def __init__(self, input_size, hidden_size, threshold=0.5, slope=25):
+        super().__init__()
+
+        self.input_linear = nn.Linear(input_size, hidden_size)
+        self.recurrent_linear = nn.Linear(hidden_size, hidden_size, bias=False)
+
+        self.threshold = threshold
+        self.slope = slope
+
+    def step(self, x):
+        hard = (x >= self.threshold).float()
+        soft = torch.sigmoid(self.slope * (x - self.threshold))
+        return (hard - soft).detach() + soft
+
+    def forward(self, x, h):
+        return self.step(self.input_linear(x) + self.recurrent_linear(h))
+
+class RecurrentStepAutoencoder(nn.Module):
+    def __init__(self, input_size, recurrent_size, encoder_sizes, decoder_sizes, multiply_weights=False):
+        super().__init__()
+
+        self.recurrent_size = recurrent_size
+
+        self.encoder_layers = nn.ModuleList()
+
+        prev_size = input_size
+        for size in encoder_sizes:
+            self.encoder_layers.append(nn.Linear(prev_size, size))
+            if multiply_weights:
+                self.encoder_layers[-1].weight.data = self.encoder_layers[-1].weight.data * 10
+            prev_size = size
+
+        self.recurrent = StepRNNCell(prev_size, recurrent_size, threshold=0.5)
+
+        self.decoder_layers = nn.ModuleList()
+
+        prev_size = recurrent_size
+        for size in decoder_sizes:
+            self.decoder_layers.append(nn.Linear(prev_size, size))
+            if multiply_weights:
+                self.decoder_layers[-1].weight.data = self.decoder_layers[-1].weight.data * 10
+            prev_size = size
+
+        self.output_layer = nn.Linear(prev_size, input_size)
+
+    def forward(self, x, ret_lat=False):
+        batch_size = x.size(0)
+        h = torch.zeros(batch_size, self.recurrent_size, device=x.device)
+
+        latents = []
+        outputs = []
+
+        for t in range(x.size(2)):
+            # print("====================================================================")
+            out = x[:, :, t]
+            # print(out)
+
+            for layer in self.encoder_layers:
+                out = surrogate_step(layer(out))
+                # print(out)
+
+            h = self.recurrent(out, h)
+            latents.append(h)
+
+            out = surrogate_step(h)
+            # print(out)
+
+            for layer in self.decoder_layers:
+                out = surrogate_step(layer(out))
+                # print(out)
+
+            out = self.output_layer(out)
+
+            out = surrogate_step(out)
+            # print(out)
+            # out = step_threshold(out)
+            outputs.append(out)
+
+        outputs = torch.stack(outputs, dim=2)
+        latents = torch.stack(latents, dim=2)
+
+        if ret_lat:
+            return outputs, latents
+
+        return outputs
+
+    def get_total_layers(self):
+        return len(self.encoder_layers) + len(self.decoder_layers) + 1

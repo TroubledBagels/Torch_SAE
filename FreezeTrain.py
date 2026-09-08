@@ -5,11 +5,31 @@ import utils.Network as N
 import tqdm
 import matplotlib.pyplot as plt
 
-def plot_reconstruction(inputs, outputs, epoch):
+def plot_reconstruction(inputs, outputs, epoch, criterion, tau=10.0):
     target = inputs[0].detach().cpu()
     output = outputs[0].detach().cpu()
 
-    fig, axes = plt.subplots(2, 1, figsize=(12, 6), sharex=True)
+    criterion_name = getattr(criterion, "__name__", criterion.__class__.__name__).lower()
+
+    if "rossum" in criterion_name:
+        alpha = torch.exp(torch.tensor(-1.0 / tau))
+
+        pred_trace = torch.zeros_like(output)
+        target_trace = torch.zeros_like(target)
+
+        pred_trace[:, 0] = output[:, 0]
+        target_trace[:, 0] = target[:, 0]
+
+        for t in range(1, output.shape[-1]):
+            pred_trace[:, t] = alpha * pred_trace[:, t - 1] + output[:, t]
+            target_trace[:, t] = alpha * target_trace[:, t - 1] + target[:, t]
+
+        timestep_loss = ((pred_trace - target_trace) ** 2).mean(dim=0)
+
+    else:
+        timestep_loss = ((output - target) ** 2).mean(dim=0)
+
+    fig, axes = plt.subplots(3, 1, figsize=(12, 9), sharex=True)
 
     axes[0].imshow(target, aspect='auto', interpolation='nearest', origin='lower')
     axes[0].set_title(f'Target - Epoch {epoch + 1}')
@@ -18,7 +38,12 @@ def plot_reconstruction(inputs, outputs, epoch):
     axes[1].imshow(output, aspect='auto', interpolation='nearest', origin='lower')
     axes[1].set_title(f'Reconstruction - Epoch {epoch + 1}')
     axes[1].set_ylabel('Channel')
-    axes[1].set_xlabel('Timestep')
+
+    axes[2].plot(timestep_loss)
+    axes[2].set_title('Loss Per Timestep')
+    axes[2].set_ylabel('Loss')
+    axes[2].set_xlabel('Timestep')
+    axes[2].grid()
 
     plt.tight_layout()
     plt.show()
@@ -98,7 +123,7 @@ def _normal_train_multilayer(model, tr_dl, te_dl, optimizer, criterion, device, 
                 if batch_idx == 0:
                     print("Target spikes:", inputs[0].sum().item())
                     print("Output spikes:", outputs[0].sum().item())
-                    plot_reconstruction(inputs, outputs, epoch)
+                    plot_reconstruction(inputs, outputs, epoch, criterion)
 
         test_loss /= len(te_dl.dataset)
         print(f'Test Loss: {test_loss:.4f}')
@@ -110,6 +135,8 @@ def _normal_train_multilayer(model, tr_dl, te_dl, optimizer, criterion, device, 
 def normal_train(model, tr_dl, te_dl, optimizer, criterion, device, num_epochs=10):
     if isinstance(model, N.MultilayerAE) or isinstance(model, N.RecurrentSpikingAutoencoder):
         return _normal_train_multilayer(model, tr_dl, te_dl, optimizer, criterion, device, num_epochs)
+
+    print("Entered normal_train")
 
     model.to(device)
     model.train()
@@ -129,6 +156,7 @@ def normal_train(model, tr_dl, te_dl, optimizer, criterion, device, num_epochs=1
 
             running_loss += loss.item()
             pbar.set_postfix(loss=running_loss/(i+1))
+            # exit()
 
         epoch_loss = running_loss / len(tr_dl.dataset)
         print(f'Epoch [{epoch + 1}/{num_epochs}], Loss: {epoch_loss:.4f}')
@@ -158,7 +186,7 @@ def normal_train(model, tr_dl, te_dl, optimizer, criterion, device, num_epochs=1
                 if batch_idx == 0:
                     print("Target spikes:", inputs[0].sum().item())
                     print("Output spikes:", outputs[0].sum().item())
-                    plot_reconstruction(inputs, outputs, epoch)
+                    plot_reconstruction(inputs, outputs, epoch, criterion)
 
         test_loss /= len(te_dl.dataset)
         print(f'Test Loss: {test_loss:.4f}')
@@ -239,7 +267,7 @@ def _freeze_train_batch(model, tr_dl, te_dl, optimizer, criterion, device, num_e
                 if batch_idx == 0:
                     print("Target spikes:", inputs[0].sum().item())
                     print("Output spikes:", outputs[0].sum().item())
-                    plot_reconstruction(inputs, outputs, epoch)
+                    plot_reconstruction(inputs, outputs, epoch, criterion)
 
         test_loss /= len(te_dl.dataset)
         print(f'Test Loss: {test_loss:.4f}')
@@ -273,6 +301,9 @@ def freeze_train(model, tr_dl, te_dl, optimizer, criterion, device, num_epochs=1
     else:
         cur_training = 0
         model.freeze_but(cur_training)
+
+    best_f1 = 0.0
+    best_epoch = 0
 
     for epoch in range(num_epochs):
         running_loss = 0.0
@@ -313,7 +344,7 @@ def freeze_train(model, tr_dl, te_dl, optimizer, criterion, device, num_epochs=1
                 if batch_idx == 0:
                     print("Target spikes:", inputs[0].sum().item())
                     print("Output spikes:", outputs[0].sum().item())
-                    plot_reconstruction(inputs, outputs, epoch)
+                    plot_reconstruction(inputs, outputs, epoch, criterion)
 
         test_loss /= len(te_dl.dataset)
         print(f'Test Loss: {test_loss:.4f}')
@@ -322,6 +353,10 @@ def freeze_train(model, tr_dl, te_dl, optimizer, criterion, device, num_epochs=1
         rec = tp / (tp + fn) if (tp + fn) > 0 else 0.0
         f1 = 2 * (prec * rec) / (prec + rec) if (prec + rec) > 0 else 0.0
         print(f'Precision: {prec:.4f}, Recall: {rec:.4f}, F1 Score: {f1:.4f}')
+
+        if f1 > best_f1:
+            best_f1 = f1
+            best_epoch = epoch
 
         model.train()
         if backwards:
@@ -337,4 +372,6 @@ def freeze_train(model, tr_dl, te_dl, optimizer, criterion, device, num_epochs=1
 
         print(f"Learning layer index: {cur_training}")
 
+    print(f"Best f1 score: {best_f1:.4f}")
+    print(f"Best epoch index: {best_epoch}")
     return None
