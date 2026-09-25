@@ -234,6 +234,13 @@ class ProgressiveSpikingAutoencoderTrainer:
     stage and the optional fine-tuning phase stop independently after the chosen
     number of consecutive epochs without improvement and restore their best
     checkpoint according to the selected metric.
+
+    If ``reuse_initial_decoder_for_final_layer=True``, the retained temporary
+    decoder learned by the first I -> M -> I stage is saved. Immediately before
+    the final M -> I decoder layer is trained, its compatible linear and spiking
+    neuron state is initialised from that saved decoder. The final layer is then
+    trained normally; this option changes its initialisation, not whether it is
+    trainable.
     """
 
     def __init__(
@@ -254,7 +261,8 @@ class ProgressiveSpikingAutoencoderTrainer:
         f1_tolerance=2,
         patience=None,
         patience_metric="loss",
-        patience_min_delta=0.0
+        patience_min_delta=0.0,
+        reuse_initial_decoder_for_final_layer=False
     ):
         self.model = model
         self.loss_fn = loss_fn
@@ -269,6 +277,12 @@ class ProgressiveSpikingAutoencoderTrainer:
         self.patience = None if patience is None else int(patience)
         self.patience_metric = self._normalise_patience_metric(patience_metric)
         self.patience_min_delta = float(patience_min_delta)
+        self.reuse_initial_decoder_for_final_layer = bool(reuse_initial_decoder_for_final_layer)
+
+        # Filled from the retained temporary readout of the first I -> M -> I
+        # stage. It deliberately lives outside model.state_dict() because the
+        # temporary readout is not part of the user's model.
+        self._initial_decoder_state = None
 
         if self.f1_tolerance < 0:
             raise ValueError("f1_tolerance must be >= 0")
@@ -568,6 +582,124 @@ class ProgressiveSpikingAutoencoderTrainer:
 
         return readout.to(self.device)
 
+    @staticmethod
+    def _clone_state_dict(module):
+        return {
+            key: value.detach().cpu().clone()
+            for key, value in module.state_dict().items()
+        }
+
+    @staticmethod
+    def _load_compatible_state(target_module, source_state):
+        """Load only state entries whose names and tensor shapes match."""
+        target_state = target_module.state_dict()
+        compatible = {}
+
+        for key, value in source_state.items():
+            if key in target_state and target_state[key].shape == value.shape:
+                compatible[key] = value.to(
+                    device=target_state[key].device,
+                    dtype=target_state[key].dtype
+                )
+
+        if compatible:
+            target_module.load_state_dict(compatible, strict=False)
+
+        return sorted(compatible)
+
+    def _is_initial_i_m_i_stage(self, stage, stage_number):
+        return (
+            stage_number == 1
+            and stage.use_temp_readout
+            and stage.train_indices == [0]
+            and stage.active_end == 0
+        )
+
+    def _is_final_decoder_stage(self, stage):
+        final_index = len(self.layers) - 1
+        return (
+            not stage.use_temp_readout
+            and stage.active_end == final_index
+            and stage.train_indices == [final_index]
+        )
+
+    def _save_initial_decoder(self, temp_readout, retained_epoch):
+        if temp_readout is None:
+            raise RuntimeError(
+                "Cannot save the initial I -> M -> I decoder because that stage "
+                "does not have a temporary readout."
+            )
+
+        self._initial_decoder_state = {
+            "linear": self._clone_state_dict(temp_readout.linear),
+            "lif": self._clone_state_dict(temp_readout.lif),
+            "retained_epoch": retained_epoch,
+            "input_size": temp_readout.linear.in_features,
+            "output_size": temp_readout.linear.out_features,
+        }
+
+        tqdm.tqdm.write(
+            "Saved retained decoder from initial I -> M -> I stage "
+            f"(epoch {retained_epoch}) for final-layer initialisation."
+        )
+
+    def _initialise_final_decoder_from_initial(self):
+        if not self.reuse_initial_decoder_for_final_layer:
+            return False
+
+        if self._initial_decoder_state is None:
+            raise RuntimeError(
+                "reuse_initial_decoder_for_final_layer=True, but no decoder from "
+                "the initial I -> M -> I stage has been saved. This option "
+                "requires a progressive schedule whose first stage uses a "
+                "temporary M -> I readout."
+            )
+
+        final_layer = self.layers[-1]
+        final_neuron = self.neurons[-1]
+        source_in = self._initial_decoder_state["input_size"]
+        source_out = self._initial_decoder_state["output_size"]
+
+        if (
+            getattr(final_layer, "in_features", None) != source_in
+            or getattr(final_layer, "out_features", None) != source_out
+        ):
+            raise ValueError(
+                "The initial I -> M -> I decoder cannot initialise the final "
+                f"layer: saved decoder is {source_in}->{source_out}, but the "
+                f"final layer is {getattr(final_layer, 'in_features', '?')}->"
+                f"{getattr(final_layer, 'out_features', '?')}."
+            )
+
+        loaded_linear = self._load_compatible_state(
+            final_layer,
+            self._initial_decoder_state["linear"]
+        )
+
+        if "weight" not in loaded_linear:
+            raise ValueError(
+                "Could not copy the saved initial decoder weight into the final "
+                "decoder layer. Their state_dict layouts are incompatible."
+            )
+
+        loaded_neuron = self._load_compatible_state(
+            final_neuron,
+            self._initial_decoder_state["lif"]
+        )
+
+        neuron_text = (
+            f"; copied neuron state: {', '.join(loaded_neuron)}"
+            if loaded_neuron
+            else "; no compatible neuron state to copy"
+        )
+        tqdm.tqdm.write(
+            "Initialised final decoder from retained initial I -> M -> I decoder "
+            f"(source epoch {self._initial_decoder_state['retained_epoch']}; "
+            f"copied linear state: {', '.join(loaded_linear)}{neuron_text})."
+        )
+
+        return True
+
     def _init_neuron_state(self, neuron):
         if hasattr(neuron, "init_leaky"):
             return neuron.init_leaky()
@@ -803,6 +935,8 @@ class ProgressiveSpikingAutoencoderTrainer:
         print(f"STAGE {stage_results['stage']} COMPLETE: {stage_results['name']}")
         print(f"Epochs trained: {epochs}")
         print(f"Trainable actual layer(s): {stage_results['train_layers']}")
+        if stage_results.get("initialised_from_initial_decoder", False):
+            print("Final decoder initialisation: retained decoder from initial I -> M -> I stage")
         print(f"Train loss: {first_train_loss:.6f} -> {final_train_loss:.6f}")
         print(f"Test loss:  {first_test_loss:.6f} -> {final_test_loss:.6f}")
         print(f"Test F1:    {first_f1:.4f} -> {final_f1:.4f} ({f1_change:+.4f})")
@@ -943,6 +1077,11 @@ class ProgressiveSpikingAutoencoderTrainer:
 
     def _train_stage(self, train_loader, test_loader, stage, num_epochs, stage_number, plot, plot_every, tau):
         temp_readout = self._make_temp_readout(stage)
+
+        initialised_from_initial_decoder = False
+        if self._is_final_decoder_stage(stage):
+            initialised_from_initial_decoder = self._initialise_final_decoder_from_initial()
+
         params = self._prepare_stage_parameters(stage, temp_readout)
         optimizer = self._make_optimizer(params)
 
@@ -967,6 +1106,7 @@ class ProgressiveSpikingAutoencoderTrainer:
         retained_recall_tolerant = 0.0
         retained_f1_tolerant = 0.0
         best_model_state = None
+        best_temp_readout_state = None
 
         epochs_without_improvement = 0
         stopped_early = False
@@ -1101,6 +1241,8 @@ class ProgressiveSpikingAutoencoderTrainer:
                     key: value.detach().cpu().clone()
                     for key, value in self.model.state_dict().items()
                 }
+                if temp_readout is not None:
+                    best_temp_readout_state = self._clone_state_dict(temp_readout)
                 epochs_without_improvement = 0
             elif self.patience is not None:
                 epochs_without_improvement += 1
@@ -1136,6 +1278,15 @@ class ProgressiveSpikingAutoencoderTrainer:
         if best_model_state is not None:
             self.model.load_state_dict(best_model_state)
 
+        if temp_readout is not None and best_temp_readout_state is not None:
+            temp_readout.load_state_dict(best_temp_readout_state)
+
+        if (
+            self.reuse_initial_decoder_for_final_layer
+            and self._is_initial_i_m_i_stage(stage, stage_number)
+        ):
+            self._save_initial_decoder(temp_readout, retained_metric_epoch)
+
         stage_results["best_test_loss"] = best_test_loss
         stage_results["best_test_loss_epoch"] = best_test_loss_epoch
         stage_results["retained_precision"] = retained_precision
@@ -1157,6 +1308,8 @@ class ProgressiveSpikingAutoencoderTrainer:
         stage_results["epochs_without_improvement"] = epochs_without_improvement
         stage_results["stopped_early"] = stopped_early
         stage_results["epochs_trained"] = len(stage_results["train_loss"])
+        stage_results["reuse_initial_decoder_for_final_layer"] = self.reuse_initial_decoder_for_final_layer
+        stage_results["initialised_from_initial_decoder"] = initialised_from_initial_decoder
 
         self._print_stage_recap(stage_results)
 
@@ -1523,6 +1676,7 @@ class ProgressiveSpikingAutoencoderTrainer:
                 "patience": self.patience,
                 "patience_metric": self.patience_metric,
                 "patience_min_delta": self.patience_min_delta,
+                "reuse_initial_decoder_for_final_layer": self.reuse_initial_decoder_for_final_layer,
                 "stages": [],
                 "fine_tune": None,
                 "test_only": test_results
@@ -1534,6 +1688,11 @@ class ProgressiveSpikingAutoencoderTrainer:
                 "For evaluation only, call trainer.test(test_loader) or "
                 "trainer.fit(train_loader=None, test_loader=test_loader, test_only=True)."
             )
+
+        # A new fit() run should source the final-layer initialisation from the
+        # decoder trained during this run's own first I -> M -> I stage.
+        self._initial_decoder_state = None
+
         if isinstance(epochs_per_stage, int):
             stage_epochs = [epochs_per_stage] * len(self.stages)
         else:
@@ -1550,6 +1709,7 @@ class ProgressiveSpikingAutoencoderTrainer:
             "patience": self.patience,
             "patience_metric": self.patience_metric,
             "patience_min_delta": self.patience_min_delta,
+            "reuse_initial_decoder_for_final_layer": self.reuse_initial_decoder_for_final_layer,
             "stages": [],
             "fine_tune": None
         }
@@ -1588,3 +1748,4 @@ class ProgressiveSpikingAutoencoderTrainer:
         }
 
         return final_state, results
+

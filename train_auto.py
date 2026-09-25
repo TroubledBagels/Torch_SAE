@@ -200,6 +200,7 @@ if TRAIN:
             lr=1e-3,
             patience=8,
             patience_min_delta=0.0001,
+            reuse_initial_decoder_for_final_layer=True,
             **trainer_kwargs
         )
 
