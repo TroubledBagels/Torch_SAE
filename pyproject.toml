@@ -1,0 +1,16 @@
+[project]
+name = "torch-sae"
+version = "0.1.0"
+requires-python = ">=3.11,<3.12"
+
+dependencies = [
+    "torch",
+    "torchvision",
+    "torchaudio",
+    "snntorch",
+    "numpy",
+    "pandas",
+    "matplotlib",
+    "tqdm",
+    "speech2spikes",
+]
