@@ -10,6 +10,27 @@ import torchvision.transforms as transforms
 import speech2spikes as s2s
 import torchaudio.functional as F
 import random
+import soundfile as sf
+
+def load_audio(path):
+    """
+    Drop-in replacement for torchaudio.load for ordinary audio files.
+
+    Returns:
+        waveform: [channels, samples] float32 tensor
+        sample_rate: int
+    """
+    audio, sample_rate = sf.read(
+        str(path),
+        dtype="float32",
+        always_2d=True,
+    )
+
+    # soundfile: [samples, channels]
+    # torchaudio: [channels, samples]
+    waveform = torch.from_numpy(audio.T.copy())
+
+    return waveform, sample_rate
 
 def exp_filter(spikes: torch.Tensor, tau: float, dt: float = 1.0):
     B, T = spikes.shape
@@ -151,7 +172,16 @@ class TUTDataset(Dataset):
         audio_file = self.file_list[idx]
         ann_file = self.ann_path / (audio_file.stem + "_full.ann")
 
-        waveform, sr = torchaudio.load(audio_file)
+        try:
+            waveform, sr = torchaudio.load(audio_file)
+        except Exception as e:
+            try:
+                waveform, sr = load_audio(audio_file)
+            except Exception as e:
+                print("Error loading audio file", audio_file)
+                print(e)
+                exit(1)
+
         if waveform.shape[0] != 1:
             waveform = waveform.mean(dim=0, keepdim=True)  # Convert to mono by averaging channels
         waveform = waveform.squeeze(0)  # Assuming mono audio
@@ -245,7 +275,15 @@ class URBANDataset(Dataset):
         audio_file = self.file_list[idx]
         ann_file = self.ann_path / (audio_file.stem + ".txt")
 
-        waveform, sr = torchaudio.load(audio_file)
+        try:
+            waveform, sr = torchaudio.load(audio_file)
+        except Exception as e:
+            try:
+                waveform, sr = load_audio(audio_file)
+            except Exception as e:
+                print("Error loading audio file", audio_file)
+                print(e)
+                exit(1)
         waveform = waveform.squeeze(0)  # Assuming mono audio
 
         ann_df = pd.read_csv(ann_file, sep='\t', header=None, names=['onset', 'offset', 'event_label'], dtype={'onset': float, 'offset': float, 'event_label': str})
@@ -362,7 +400,15 @@ class DataSEDDataset(Dataset):
         audio_file = self.file_list[idx]
         # print(audio_file)
 
-        waveform, sr = torchaudio.load(audio_file)
+        try:
+            waveform, sr = torchaudio.load(audio_file)
+        except Exception as e:
+            try:
+                waveform, sr = load_audio(audio_file)
+            except Exception as e:
+                print("Error loading audio file", audio_file)
+                print(e)
+                exit(1)
         waveform = waveform.squeeze(0)  # Assuming mono audio
 
         # Load csv skipping row 1
@@ -458,7 +504,15 @@ class TUT2017Dataset(Dataset):
         ann_df = self.label_df[self.label_df['filename'] == audio_file.name][['onset', 'offset']]
         # print(audio_file.name)
 
-        waveform, sr = torchaudio.load(audio_file)
+        try:
+            waveform, sr = torchaudio.load(audio_file)
+        except Exception as e:
+            try:
+                waveform, sr = load_audio(audio_file)
+            except Exception as e:
+                print("Error loading audio file", audio_file)
+                print(e)
+                exit(1)
         waveform = waveform.mean(dim=0).squeeze(0)  # Assuming mono audio
 
         if self.transform is not None:
@@ -582,7 +636,15 @@ class TUT2017Classes(Dataset):
         audio_file = self.file_list[idx]
         ann_df = self.label_df[self.label_df['filename'] == audio_file.name][['onset', 'offset']]
 
-        waveform, sr = torchaudio.load(audio_file)
+        try:
+            waveform, sr = torchaudio.load(audio_file)
+        except Exception as e:
+            try:
+                waveform, sr = load_audio(audio_file)
+            except Exception as e:
+                print("Error loading audio file", audio_file)
+                print(e)
+                exit(1)
         waveform = waveform.mean(dim=0).squeeze(0)  # Assuming mono audio
 
         def cut_to_label(waveform, ann_df, sr):
