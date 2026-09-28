@@ -143,6 +143,7 @@ loss_fn = lambda x, y: FT.van_rossum_loss_count(
 print(f"Number of layers: {net.get_total_layers()}")
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+print(f"Using device: {device}")
 
 if MULTILAYER and LOAD:
     dimensions = "20_16_12_16_20"

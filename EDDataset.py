@@ -165,6 +165,8 @@ class TUTDataset(Dataset):
                 self.file_list.append(self.audio_path / file)
         self.file_list.sort()
 
+        self.use_torch_audio = True
+
     def __len__(self):
         return len(self.file_list)
 
@@ -172,15 +174,19 @@ class TUTDataset(Dataset):
         audio_file = self.file_list[idx]
         ann_file = self.ann_path / (audio_file.stem + "_full.ann")
 
-        try:
-            waveform, sr = torchaudio.load(audio_file)
-        except Exception as e:
+        if self.use_torch_audio:
             try:
-                waveform, sr = load_audio(audio_file)
+                waveform, sr = torchaudio.load(audio_file)
             except Exception as e:
-                print("Error loading audio file", audio_file)
-                print(e)
-                exit(1)
+                try:
+                    self.use_torch_audio = False
+                    waveform, sr = load_audio(audio_file)
+                except Exception as e:
+                    print("Error loading audio file", audio_file)
+                    print(e)
+                    exit(1)
+        else:
+            waveform, sr = load_audio(audio_file)
 
         if waveform.shape[0] != 1:
             waveform = waveform.mean(dim=0, keepdim=True)  # Convert to mono by averaging channels
@@ -267,6 +273,8 @@ class URBANDataset(Dataset):
         self.file_list = self.file_list[:1000]
         self.random_chunking = random_chunking
         self.only_background = only_background
+        
+        self.use_torch_audio = True
 
     def __len__(self):
         return len(self.file_list)
@@ -275,15 +283,20 @@ class URBANDataset(Dataset):
         audio_file = self.file_list[idx]
         ann_file = self.ann_path / (audio_file.stem + ".txt")
 
-        try:
-            waveform, sr = torchaudio.load(audio_file)
-        except Exception as e:
+        if self.use_torch_audio:
             try:
-                waveform, sr = load_audio(audio_file)
+                waveform, sr = torchaudio.load(audio_file)
             except Exception as e:
-                print("Error loading audio file", audio_file)
-                print(e)
-                exit(1)
+                try:
+                    self.use_torch_audio = False
+                    waveform, sr = load_audio(audio_file)
+                except Exception as e:
+                    print("Error loading audio file", audio_file)
+                    print(e)
+                    exit(1)
+        else:
+            waveform, sr = load_audio(audio_file)
+
         waveform = waveform.squeeze(0)  # Assuming mono audio
 
         ann_df = pd.read_csv(ann_file, sep='\t', header=None, names=['onset', 'offset', 'event_label'], dtype={'onset': float, 'offset': float, 'event_label': str})
@@ -393,6 +406,9 @@ class DataSEDDataset(Dataset):
                 self.file_list.append(self.audio_path / file)
         self.file_list.sort()
 
+        self.use_torch_audio = True
+
+
     def __len__(self):
         return len(self.file_list)
 
@@ -400,15 +416,19 @@ class DataSEDDataset(Dataset):
         audio_file = self.file_list[idx]
         # print(audio_file)
 
-        try:
-            waveform, sr = torchaudio.load(audio_file)
-        except Exception as e:
+        if self.use_torch_audio:
             try:
-                waveform, sr = load_audio(audio_file)
+                waveform, sr = torchaudio.load(audio_file)
             except Exception as e:
-                print("Error loading audio file", audio_file)
-                print(e)
-                exit(1)
+                try:
+                    self.use_torch_audio = False
+                    waveform, sr = load_audio(audio_file)
+                except Exception as e:
+                    print("Error loading audio file", audio_file)
+                    print(e)
+                    exit(1)
+        else:
+            waveform, sr = load_audio(audio_file)
         waveform = waveform.squeeze(0)  # Assuming mono audio
 
         # Load csv skipping row 1
@@ -494,6 +514,8 @@ class TUT2017Dataset(Dataset):
         self.spk_args = spk_args
 
         self.only_class = only_class
+        self.use_torch_audio = True
+
 
 
     def __len__(self):
@@ -504,15 +526,19 @@ class TUT2017Dataset(Dataset):
         ann_df = self.label_df[self.label_df['filename'] == audio_file.name][['onset', 'offset']]
         # print(audio_file.name)
 
-        try:
-            waveform, sr = torchaudio.load(audio_file)
-        except Exception as e:
+        if self.use_torch_audio:
             try:
-                waveform, sr = load_audio(audio_file)
+                waveform, sr = torchaudio.load(audio_file)
             except Exception as e:
-                print("Error loading audio file", audio_file)
-                print(e)
-                exit(1)
+                try:
+                    self.use_torch_audio = False
+                    waveform, sr = load_audio(audio_file)
+                except Exception as e:
+                    print("Error loading audio file", audio_file)
+                    print(e)
+                    exit(1)
+        else:
+            waveform, sr = load_audio(audio_file)
         waveform = waveform.mean(dim=0).squeeze(0)  # Assuming mono audio
 
         if self.transform is not None:
@@ -580,6 +606,8 @@ class DangMFCC:
             )
         )
 
+        self.use_torch_audio = True
+
     def __call__(self, waveform: torch.Tensor) -> torch.Tensor:
         if waveform.dim() == 1:
             waveform = waveform.unsqueeze(0)
@@ -613,7 +641,6 @@ class TUT2017Classes(Dataset):
         # self.file_list = [self.file_list[1], self.file_list[501], self.file_list[1002]]
         self.cutting_down = cut_to_label
 
-
         if no_neg:
             # Remove all files from file_list that do not have an event
             # Iterate through label_df and if onset is NaN, then that file does not have an event
@@ -627,7 +654,7 @@ class TUT2017Classes(Dataset):
             self.file_list = list(set(temp_list))
 
         self.to_100 = to_100
-
+        self.use_torch_audio = True
 
     def __len__(self):
         return len(self.file_list)
@@ -636,15 +663,19 @@ class TUT2017Classes(Dataset):
         audio_file = self.file_list[idx]
         ann_df = self.label_df[self.label_df['filename'] == audio_file.name][['onset', 'offset']]
 
-        try:
-            waveform, sr = torchaudio.load(audio_file)
-        except Exception as e:
+        if self.use_torch_audio:
             try:
-                waveform, sr = load_audio(audio_file)
+                waveform, sr = torchaudio.load(audio_file)
             except Exception as e:
-                print("Error loading audio file", audio_file)
-                print(e)
-                exit(1)
+                try:
+                    self.use_torch_audio = False
+                    waveform, sr = load_audio(audio_file)
+                except Exception as e:
+                    print("Error loading audio file", audio_file)
+                    print(e)
+                    exit(1)
+        else:
+            waveform, sr = load_audio(audio_file)
         waveform = waveform.mean(dim=0).squeeze(0)  # Assuming mono audio
 
         def cut_to_label(waveform, ann_df, sr):
