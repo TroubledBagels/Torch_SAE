@@ -13,4 +13,5 @@ dependencies = [
     "matplotlib",
     "tqdm",
     "speech2spikes",
+    "torchcodec"
 ]
