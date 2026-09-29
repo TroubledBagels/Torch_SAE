@@ -389,6 +389,63 @@ class URBANDataset(Dataset):
             raise IndexError("File number out of range")
         return self.file_list.index(self.audio_path / f"soundscape_train_bimodal{str(file_num)}.wav")
 
+class URBANDatasetGPU(URBANDataset):
+    def __init__(
+        self,
+        root,
+        split: DatasetSplit=DatasetSplit.TRAIN,
+        transform=None,
+        random_chunking=False,
+        only_background=False,
+        device=None
+    ):
+        super(URBANDatasetGPU, self).__init__(
+            root=root,
+            split=split,
+            transform=transform,
+            random_chunking=random_chunking,
+            only_background=only_background
+        )
+
+        if device is None:
+            if not torch.cuda.is_available():
+                raise RuntimeError("URBANDatasetGPU requires a CUDA-capable GPU")
+
+            device = torch.device("cuda")
+
+        self.device = torch.device(device)
+
+        self.gpu_waveforms = []
+        self.gpu_spikes = []
+
+        print(f"Preloading {len(self.file_list)} samples onto {self.device}...")
+
+        for idx in range(len(self.file_list)):
+            waveform, spikes = URBANDataset.__getitem__(self, idx)
+
+            waveform = waveform.to(self.device)
+
+            if torch.is_tensor(spikes):
+                spikes = spikes.to(self.device)
+
+            self.gpu_waveforms.append(waveform)
+            self.gpu_spikes.append(spikes)
+
+            if (idx + 1) % 50 == 0 or idx + 1 == len(self.file_list):
+                allocated = torch.cuda.memory_allocated(self.device) / (1024 ** 3)
+                print(
+                    f"Loaded [{idx + 1}/{len(self.file_list)}] "
+                    f"| GPU memory: {allocated:.2f} GB"
+                )
+
+        print("Finished loading dataset onto GPU.")
+
+    def __len__(self):
+        return len(self.gpu_waveforms)
+
+    def __getitem__(self, idx, t_idx=False):
+        return self.gpu_waveforms[idx], self.gpu_spikes[idx]
+
 class DataSEDDataset(Dataset):
     def __init__(self, root, split: DatasetSplit=DatasetSplit.TRAIN, transform=None):
         self.root = pathlib.Path(root)

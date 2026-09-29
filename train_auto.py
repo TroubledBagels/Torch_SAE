@@ -56,6 +56,8 @@ PREFIX = "" if DELAY == 0 else f"DELAY_{DELAY}_"
 home = pathlib.Path("~").expanduser()
 local_dir = home / "data" / "URBAN-SED"
 
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
 a_transform = transforms.Compose([
     torchaudio.transforms.Resample(44100, 16000),
     edd.UnsqueezeTransform(dim=0),
@@ -68,10 +70,16 @@ a_transform = transforms.Compose([
 # tr_ds = GD.SinWaveDS(channels=20, timesteps=1000, wavelength=100, num_samples=500)
 # te_ds = GD.SinWaveDS(channels=20, timesteps=1000, wavelength=100, num_samples=100)
 #
-tr_ds = edd.URBANDataset(local_dir, split=edd.DatasetSplit.TRAIN, transform=a_transform)
-te_ds = edd.URBANDataset(local_dir, split=edd.DatasetSplit.TEST, transform=a_transform)
+if device == torch.device('cpu'):
+    tr_ds = edd.URBANDataset(local_dir, split=edd.DatasetSplit.TRAIN, transform=a_transform)
+    te_ds = edd.URBANDataset(local_dir, split=edd.DatasetSplit.TEST, transform=a_transform)
+elif device == torch.device('cuda:0'):
+    tr_ds = edd.URBANDatasetGPU(local_dir, split=edd.DatasetSplit.TRAIN, transform=a_transform, device=device)
+    te_ds = edd.URBANDatasetGPU(local_dir, split=edd.DatasetSplit.TEST, transform=a_transform, device=device)
+else:
+    raise ValueError(f"Unsupported device: {device}")
 
-if isinstance(tr_ds, edd.URBANDataset):
+if isinstance(tr_ds, edd.URBANDataset) or isinstance(te_ds, edd.URBANDatasetGPU):
     PREFIX += "urban_"
 
 tr_dl = torch.utils.data.DataLoader(tr_ds, batch_size=32, shuffle=True)
@@ -142,7 +150,6 @@ loss_fn = lambda x, y: FT.van_rossum_loss_count(
 
 print(f"Number of layers: {net.get_total_layers()}")
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f"Using device: {device}")
 
 if MULTILAYER and LOAD:

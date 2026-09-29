@@ -861,7 +861,6 @@ class ProgressiveSpikingAutoencoderTrainer:
                 else:
                     inputs = batch
 
-                inputs = inputs.to(self.device)
                 should_record = plot and batch_index == 0
 
                 outputs, targets, layer_spikes = self._stage_forward(
@@ -1157,8 +1156,6 @@ class ProgressiveSpikingAutoencoderTrainer:
                 else:
                     inputs = batch
 
-                inputs = inputs.to(self.device)
-
                 optimizer.zero_grad(set_to_none=True)
 
                 outputs, targets, _ = self._stage_forward(
@@ -1314,6 +1311,7 @@ class ProgressiveSpikingAutoencoderTrainer:
         self._print_stage_recap(stage_results)
 
         return stage_results
+
     def _evaluate_fine_tune(self, loader, epoch, plot, tau):
         self.model.eval()
 
@@ -1333,7 +1331,6 @@ class ProgressiveSpikingAutoencoderTrainer:
                 else:
                     inputs = batch
 
-                inputs = inputs.to(self.device)
                 should_record = plot and batch_index == 0
 
                 outputs, layer_spikes = self._full_forward(inputs, record_spikes=should_record)
@@ -1447,8 +1444,6 @@ class ProgressiveSpikingAutoencoderTrainer:
                     inputs = batch[0]
                 else:
                     inputs = batch
-
-                inputs = inputs.to(self.device)
 
                 optimizer.zero_grad(set_to_none=True)
 
