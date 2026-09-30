@@ -11,6 +11,7 @@ import pathlib
 from utils.GradientViewer import export_gradient_viewer
 from utils import DECOLLE as DC
 from utils import SymmetricTrainer as ST
+from utils import TreeTrainer as TT
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -125,12 +126,15 @@ TRAIN = True
 MULTILAYER = True
 LOAD = True
 DECOLLE = False
-SYMMETRIC = True
+SYMMETRIC = False
+TREE = True
 
 if SYMMETRIC:
     PREFIX = "symmetric_" + PREFIX
 elif DECOLLE:
     PREFIX = "decolle_" + PREFIX
+elif TREE:
+    PREFIX = "tree_" + PREFIX
 
 if DECOLLE and SYMMETRIC:
     raise ValueError("DECOLLE and SYMMETRIC are not compatible")
@@ -202,6 +206,59 @@ if TRAIN:
                 raise AttributeError("Single-layer network needs lif1/lif2 or rlif1/rlif2 neuron attributes for SymmetricTrainer.")
 
         symmetric_trainer = ST.ProgressiveSpikingAutoencoderTrainer(
+            model=net,
+            loss_fn=loss_fn,
+            device=device,
+            lr=1e-3,
+            patience=8,
+            patience_min_delta=0.0001,
+            reuse_initial_decoder_for_final_layer=True,
+            **trainer_kwargs
+        )
+
+        inputs, _ = next(iter(tr_dl))
+        inputs = inputs.to(device)
+
+        net.eval()
+
+        try:
+            best_model_sd, results = symmetric_trainer.fit(
+                train_loader=tr_dl,
+                test_loader=te_dl,
+                epochs_per_stage=300,
+                fine_tune_epochs=100,
+                plot=True,
+                plot_every=1,
+                tau=10.0
+            )
+
+            net.load_state_dict(best_model_sd)
+
+            torch.save(net.state_dict(), f"output_models/{PREFIX + net.name}.pth")
+
+        except KeyboardInterrupt:
+            training_interrupted = True
+
+            torch.save(net.state_dict(), f"output_models/{PREFIX + net.name}_interrupted.pth")
+
+            print("\nTraining interrupted.")
+            print("Using current network state for gradient viewer.")
+    elif TREE:
+        trainer_kwargs = {}
+
+        if not hasattr(net, "encoder_layers"):
+            trainer_kwargs["encoder_layers"] = [net.encoder]
+            trainer_kwargs["decoder_layers"] = [net.decoder]
+
+            if hasattr(net, "lif1") and hasattr(net, "lif2"):
+                trainer_kwargs["neuron_layers"] = [net.lif1, net.lif2]
+            elif hasattr(net, "rlif1") and hasattr(net, "rlif2"):
+                trainer_kwargs["neuron_layers"] = [net.rlif1, net.rlif2]
+            else:
+                raise AttributeError(
+                    "Single-layer network needs lif1/lif2 or rlif1/rlif2 neuron attributes for SymmetricTrainer.")
+
+        symmetric_trainer = TT.TreeSpikingAutoencoderTrainer(
             model=net,
             loss_fn=loss_fn,
             device=device,
