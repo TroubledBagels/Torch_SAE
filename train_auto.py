@@ -87,8 +87,8 @@ tr_dl = torch.utils.data.DataLoader(tr_ds, batch_size=32, shuffle=True)
 te_dl = torch.utils.data.DataLoader(te_ds, batch_size=32, shuffle=False)
 
 # net = N.SingleLayerAutoencoder(20, 15)
-# net = N.SingleLayerAutoencoderTrainable(20, 15)
-net = N.MultilayerAETrainable(20, [16, 12])
+net = N.SingleLayerAutoencoderTrainable(20, 12)
+# net = N.MultilayerAETrainable(20, [16, 12])
 # net = N.UNetSpikingAutoencoder(
 #     input_size=20,
 #     hidden_sizes=[32, 15],
@@ -123,11 +123,11 @@ net = N.MultilayerAETrainable(20, [16, 12])
 # net.load_state_dict(torch.load("output_models/symmetric_urban__20_16_12_16_20MultilayerAETrainable.pth"))
 
 TRAIN = True
-MULTILAYER = True
+MULTILAYER = False
 LOAD = True
 DECOLLE = False
 SYMMETRIC = False
-TREE = True
+TREE = False
 
 if SYMMETRIC:
     PREFIX = "symmetric_" + PREFIX
@@ -177,7 +177,7 @@ if MULTILAYER and LOAD:
         net.decoder_layers[0].weight.copy_(torch.tensor(layer_3_weights.T, dtype=net.decoder_layers[0].weight.dtype, device=device))
         net.decoder_layers[1].weight.copy_(torch.tensor(layer_4_weights.T, dtype=net.decoder_layers[1].weight.dtype, device=device))
 elif LOAD:
-    folder = f"{PREFIX}single_autoencoder_20_15"
+    folder = f"{PREFIX}single_autoencoder_20_12"
     layer_1_weights = np.load(f'pretrained_weights/{folder}/layer_1_weights.npy')
     layer_2_weights = np.load(f'pretrained_weights/{folder}/layer_2_weights.npy')
 
