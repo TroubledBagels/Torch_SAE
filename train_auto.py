@@ -124,10 +124,10 @@ net = N.MultilayerAETrainable(20, [16, 12, 8])
 # net.load_state_dict(torch.load("output_models/symmetric_urban__20_16_12_16_20MultilayerAETrainable.pth"))
 
 TRAIN = True
-MULTILAYER = False
+MULTILAYER = True
 LOAD = True
 DECOLLE = False
-SYMMETRIC = False
+SYMMETRIC = True
 TREE = False
 
 if SYMMETRIC:
