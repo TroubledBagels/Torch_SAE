@@ -271,6 +271,8 @@ delayed_net.load_state_dict(
     copy.deepcopy(instant_net.state_dict())
 )
 
+loss_fn = nn.MSELoss()
+
 
 # Confirm that every parameter is identical.
 for (name1, p1), (name2, p2) in zip(
@@ -325,6 +327,9 @@ instant_s3 = instant_s3[:, 0]
 delayed_s1 = delayed_s1[:, 0]
 delayed_s2 = delayed_s2[:, 0]
 delayed_s3 = delayed_s3[:, 0]
+
+delayed_loss = loss_fn(torch.zeros_like(delayed_s3), delayed_s3).item()
+instant_loss = loss_fn(torch.zeros_like(instant_s3), instant_s3).item()
 
 
 # ============================================================
@@ -392,6 +397,9 @@ print(
 print(
     f"Layer 3 identical after +2 shift: {layer3_equal_after_shift}"
 )
+
+print(f"Instantaneous output loss: {instant_loss:.6f}")
+print(f"Delayed output loss: {delayed_loss:.6f}")
 
 
 # ============================================================
