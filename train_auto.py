@@ -339,8 +339,8 @@ tr_dl = torch.utils.data.DataLoader(tr_ds, batch_size=32, shuffle=True)
 te_dl = torch.utils.data.DataLoader(te_ds, batch_size=32, shuffle=False)
 
 # net = N.SingleLayerAutoencoder(20, 15)
-# net = N.SingleLayerAutoencoderTrainable(20, 8)
-net = N.MultilayerAETrainable(20, [16, 12, 8])
+net = N.SingleLayerAutoencoderTrainable(20, 8)
+# net = N.MultilayerAETrainable(20, [16, 12, 8])
 # net = N.MultilayerAETrainable(20, [16, 12])
 # net = N.UNetSpikingAutoencoder(
 #     input_size=20,
@@ -376,10 +376,10 @@ net = N.MultilayerAETrainable(20, [16, 12, 8])
 # net.load_state_dict(torch.load("output_models/symmetric_urban__20_16_12_16_20MultilayerAETrainable.pth"))
 
 TRAIN = True
-MULTILAYER = True
+MULTILAYER = False
 LOAD = True
 DECOLLE = False
-SYMMETRIC = True
+SYMMETRIC = False
 TREE = False
 
 if SYMMETRIC:
@@ -423,7 +423,7 @@ if LOAD:
         PREFIX += f"{dimensions}_"
 
     else:
-        folder = f"pretrained_weights/{PREFIX}single_autoencoder_20_12"
+        folder = f"pretrained_weights/{PREFIX}single_autoencoder_20_8"
 
         load_pretrained_layers(
             net=net,
@@ -596,7 +596,7 @@ if TRAIN:
 
     else:
         try:
-            best_model_sd = FT.normal_train(net, tr_dl, te_dl, optimizer, loss_fn, device, 100, DELAY)
+            best_model_sd = FT.normal_train(net, tr_dl, te_dl, optimizer, loss_fn, device, 300, DELAY)
 
             net.load_state_dict(best_model_sd)
 
