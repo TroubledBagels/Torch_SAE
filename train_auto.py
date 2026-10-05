@@ -17,6 +17,258 @@ import warnings
 warnings.filterwarnings("ignore")
 
 
+import re
+import numpy as np
+import torch
+from pathlib import Path
+
+
+def load_pretrained_layers(net, folder, device):
+    """
+    Load pretrained layer_N_weights.npy files into a multilayer autoencoder.
+
+    Saved layers are assumed to be ordered along the forward path.
+
+    Example
+    -------
+    Saved network:
+        20 -> 16 -> 12 -> 16 -> 20
+
+    Current network:
+        20 -> 16 -> 12 -> 8 -> 12 -> 16 -> 20
+
+    The loader will map:
+
+        saved layer 1 -> encoder[0]   20 -> 16
+        saved layer 2 -> encoder[1]   16 -> 12
+        saved layer 3 -> decoder[1]   12 -> 16
+        saved layer 4 -> decoder[2]   16 -> 20
+
+    The new:
+        encoder[2]  12 -> 8
+        decoder[0]   8 -> 12
+
+    remain at their normal initialization.
+    """
+
+    folder = Path(folder)
+
+    # ----------------------------------------------------------
+    # 1. Find all layer_N_weights.npy files
+    # ----------------------------------------------------------
+    weight_files = list(folder.glob("layer_*_weights.npy"))
+
+    if not weight_files:
+        raise FileNotFoundError(
+            f"No layer_*_weights.npy files found in:\n{folder}"
+        )
+
+    # Sort numerically:
+    # layer_2_weights.npy before layer_10_weights.npy
+    def get_layer_number(path):
+        match = re.search(r"layer_(\d+)_weights\.npy$", path.name)
+
+        if match is None:
+            raise ValueError(
+                f"Could not extract layer number from {path.name}"
+            )
+
+        return int(match.group(1))
+
+    weight_files = sorted(weight_files, key=get_layer_number)
+
+    print(f"\nFound {len(weight_files)} pretrained layers in:")
+    print(f"  {folder}")
+
+    for path in weight_files:
+        print(f"  {path.name}")
+
+    # ----------------------------------------------------------
+    # 2. Get model layers in forward-pass order
+    # ----------------------------------------------------------
+    if hasattr(net, "encoder_layers") and hasattr(net, "decoder_layers"):
+        target_layers = (
+            list(net.encoder_layers)
+            + list(net.decoder_layers)
+        )
+
+        target_names = (
+            [f"encoder[{i}]" for i in range(len(net.encoder_layers))]
+            + [f"decoder[{i}]" for i in range(len(net.decoder_layers))]
+        )
+
+    elif hasattr(net, "encoder") and hasattr(net, "decoder"):
+        target_layers = [
+            net.encoder,
+            net.decoder,
+        ]
+
+        target_names = [
+            "encoder",
+            "decoder",
+        ]
+
+    else:
+        raise AttributeError(
+            "Network must contain either:\n"
+            "  encoder_layers / decoder_layers\n"
+            "or:\n"
+            "  encoder / decoder"
+        )
+
+    print(f"\nCurrent network has {len(target_layers)} trainable layers:")
+
+    for name, layer in zip(target_names, target_layers):
+        print(
+            f"  {name:12s} "
+            f"weight shape = {tuple(layer.weight.shape)}"
+        )
+
+    # ----------------------------------------------------------
+    # 3. Load arrays
+    # ----------------------------------------------------------
+    saved_weights = []
+
+    print("\nSaved weight shapes:")
+
+    for path in weight_files:
+        weights = np.load(path)
+        saved_weights.append((path, weights))
+
+        print(
+            f"  {path.name:25s} "
+            f"shape={weights.shape}"
+        )
+
+    # ----------------------------------------------------------
+    # 4. Match each saved layer to a model layer
+    #
+    # Search forward through the model. This allows a shallower
+    # pretrained network to be loaded into a deeper one.
+    # ----------------------------------------------------------
+    next_target_index = 0
+    loaded_target_indices = []
+
+    with torch.no_grad():
+
+        for path, weights in saved_weights:
+
+            matched = False
+
+            for target_index in range(
+                next_target_index,
+                len(target_layers)
+            ):
+                target_layer = target_layers[target_index]
+
+                target_shape = tuple(target_layer.weight.shape)
+                saved_shape = tuple(weights.shape)
+                transposed_shape = tuple(weights.T.shape)
+
+                # ----------------------------------------------
+                # Determine orientation automatically
+                # ----------------------------------------------
+                if saved_shape == target_shape:
+                    tensor = torch.as_tensor(
+                        weights,
+                        dtype=target_layer.weight.dtype,
+                        device=target_layer.weight.device,
+                    )
+
+                    orientation = "direct"
+
+                elif transposed_shape == target_shape:
+                    tensor = torch.as_tensor(
+                        weights.T,
+                        dtype=target_layer.weight.dtype,
+                        device=target_layer.weight.device,
+                    )
+
+                    orientation = "transposed"
+
+                else:
+                    # This target doesn't match.
+                    # Try the next network layer.
+                    continue
+
+                # ----------------------------------------------
+                # Copy weights
+                # ----------------------------------------------
+                target_layer.weight.copy_(tensor)
+
+                print(
+                    f"\nLoaded {path.name}"
+                    f"\n  saved shape:  {saved_shape}"
+                    f"\n  -> {target_names[target_index]}"
+                    f"\n  target shape: {target_shape}"
+                    f"\n  orientation:  {orientation}"
+                )
+
+                loaded_target_indices.append(target_index)
+
+                # Any following saved layer must occur later in
+                # the forward path.
+                next_target_index = target_index + 1
+
+                matched = True
+                break
+
+            if not matched:
+                remaining = [
+                    (
+                        target_names[i],
+                        tuple(target_layers[i].weight.shape)
+                    )
+                    for i in range(
+                        next_target_index,
+                        len(target_layers)
+                    )
+                ]
+
+                raise RuntimeError(
+                    f"\nCould not match pretrained weight:\n"
+                    f"  file:  {path}\n"
+                    f"  shape: {weights.shape}\n"
+                    f"  transposed shape: {weights.T.shape}\n\n"
+                    f"Remaining model layers:\n"
+                    + "\n".join(
+                        f"  {name}: {shape}"
+                        for name, shape in remaining
+                    )
+                )
+
+    # ----------------------------------------------------------
+    # 5. Report layers that remain newly initialized
+    # ----------------------------------------------------------
+    unloaded = [
+        i
+        for i in range(len(target_layers))
+        if i not in loaded_target_indices
+    ]
+
+    print("\n========================================")
+    print("Pretrained weight loading complete")
+    print("========================================")
+    print(
+        f"Loaded {len(loaded_target_indices)} / "
+        f"{len(target_layers)} model layers."
+    )
+
+    if unloaded:
+        print("\nLayers left at their initial values:")
+
+        for i in unloaded:
+            print(
+                f"  {target_names[i]:12s} "
+                f"{tuple(target_layers[i].weight.shape)}"
+            )
+    else:
+        print("\nAll model layers were loaded.")
+
+    print("========================================\n")
+
+    return loaded_target_indices
+
 def generate_gradient_view(model, test_loader, output_dir, loss_mode, device):
     sample, _ = next(iter(test_loader))
 
@@ -157,38 +409,27 @@ print(f"Number of layers: {net.get_total_layers()}")
 
 print(f"Using device: {device}")
 
-if MULTILAYER and LOAD:
-    dimensions = "20_16_12_16_20"
-    folder = f"{PREFIX}multilayer_{dimensions}"
-    PREFIX += f"{dimensions}_"
-    layer_1_weights = np.load(f'pretrained_weights/{folder}/layer_1_weights.npy')
-    layer_2_weights = np.load(f'pretrained_weights/{folder}/layer_2_weights.npy')
-    layer_3_weights = np.load(f'pretrained_weights/{folder}/layer_3_weights.npy')
-    layer_4_weights = np.load(f'pretrained_weights/{folder}/layer_4_weights.npy')
+if LOAD:
+    if MULTILAYER:
+        dimensions = "20_16_12_8_12_16_20"
+        folder = f"pretrained_weights/{PREFIX}multilayer_{dimensions}"
 
-    print(f"Loaded encoder weights: {layer_1_weights.shape}")
-    print(f"Expected encoder weights: {tuple(net.encoder_layers[0].weight.shape)}")
+        load_pretrained_layers(
+            net=net,
+            folder=folder,
+            device=device,
+        )
 
-    print(f"Loaded decoder weights: {layer_2_weights.shape}")
-    # print(f"Expected decoder weights: {tuple(net.decoder_layers[0].weight.shape)}")
+        PREFIX += f"{dimensions}_"
 
-    with torch.no_grad():
-        net.encoder_layers[0].weight.copy_(torch.tensor(layer_1_weights.T, dtype=net.encoder_layers[0].weight.dtype, device=device))
-        net.encoder_layers[1].weight.copy_(torch.tensor(layer_2_weights.T, dtype=net.encoder_layers[1].weight.dtype, device=device))
-        net.decoder_layers[0].weight.copy_(torch.tensor(layer_3_weights.T, dtype=net.decoder_layers[0].weight.dtype, device=device))
-        net.decoder_layers[1].weight.copy_(torch.tensor(layer_4_weights.T, dtype=net.decoder_layers[1].weight.dtype, device=device))
-elif LOAD:
-    folder = f"{PREFIX}single_autoencoder_20_12"
-    layer_1_weights = np.load(f'pretrained_weights/{folder}/layer_1_weights.npy')
-    layer_2_weights = np.load(f'pretrained_weights/{folder}/layer_2_weights.npy')
+    else:
+        folder = f"pretrained_weights/{PREFIX}single_autoencoder_20_12"
 
-    print(f"Loaded encoder weights: {layer_1_weights.shape}")
-    print(f"Loaded decoder weights: {layer_2_weights.shape}")
-
-    with torch.no_grad():
-        net.encoder.weight.copy_(torch.tensor(layer_1_weights.T, dtype=net.encoder.weight.dtype, device=device))
-        net.decoder.weight.copy_(torch.tensor(layer_2_weights.T, dtype=net.decoder.weight.dtype, device=device))
-
+        load_pretrained_layers(
+            net=net,
+            folder=folder,
+            device=device,
+        )
 training_interrupted = False
 
 if TRAIN:
