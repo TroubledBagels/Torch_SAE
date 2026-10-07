@@ -339,8 +339,8 @@ tr_dl = torch.utils.data.DataLoader(tr_ds, batch_size=32, shuffle=True)
 te_dl = torch.utils.data.DataLoader(te_ds, batch_size=32, shuffle=False)
 
 # net = N.SingleLayerAutoencoder(20, 15)
-net = N.SingleLayerAutoencoderTrainable(20, 8)
-# net = N.MultilayerAETrainable(20, [16, 12, 8])
+# net = N.SingleLayerAutoencoderTrainable(20, 8)
+net = N.MultilayerAETrainable(20, [16, 12, 8])
 # net = N.MultilayerAETrainable(20, [16, 12])
 # net = N.UNetSpikingAutoencoder(
 #     input_size=20,
@@ -376,10 +376,10 @@ net = N.SingleLayerAutoencoderTrainable(20, 8)
 # net.load_state_dict(torch.load("output_models/symmetric_urban__20_16_12_16_20MultilayerAETrainable.pth"))
 
 TRAIN = True
-MULTILAYER = False
+MULTILAYER = True
 LOAD = True
 DECOLLE = False
-SYMMETRIC = False
+SYMMETRIC = True
 TREE = False
 
 if SYMMETRIC:
@@ -455,6 +455,8 @@ if TRAIN:
             patience=8,
             patience_min_delta=0.0001,
             reuse_initial_decoder_for_final_layer=True,
+            scheduler_class=torch.optim.lr_schedule.CosineAnnealingLR,
+            scheduler_kwargs={"T_max": 100}
             **trainer_kwargs
         )
 
