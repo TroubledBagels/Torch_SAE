@@ -12,6 +12,7 @@ from utils.GradientViewer import export_gradient_viewer
 from utils import DECOLLE as DC
 from utils import SymmetricTrainer as ST
 from utils import TreeTrainer as TT
+from utils import LatentAnalysis as LA
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -340,8 +341,8 @@ te_dl = torch.utils.data.DataLoader(te_ds, batch_size=32, shuffle=False)
 
 # net = N.SingleLayerAutoencoder(20, 15)
 # net = N.SingleLayerAutoencoderTrainable(20, 8)
-net = N.MultilayerAETrainable(20, [16, 12, 8])
-# net = N.MultilayerAETrainable(20, [16, 12])
+# net = N.MultilayerAETrainable(20, [16, 12, 8])
+net = N.MultilayerAETrainable(20, [16, 12])
 # net = N.UNetSpikingAutoencoder(
 #     input_size=20,
 #     hidden_sizes=[32, 15],
@@ -373,7 +374,7 @@ net = N.MultilayerAETrainable(20, [16, 12, 8])
 # net.decoder.weight.data = net.decoder.weight.data * 10
 
 # net.load_state_dict(torch.load(f"output_models/{PREFIX + net.name}.pth"))
-# net.load_state_dict(torch.load("output_models/symmetric_urban__20_16_12_16_20MultilayerAETrainable.pth"))
+net.load_state_dict(torch.load("output_models/symmetric_urban__20_16_12_16_20MultilayerAETrainable.pth"))
 
 TRAIN = True
 MULTILAYER = True
@@ -381,6 +382,7 @@ LOAD = True
 DECOLLE = False
 SYMMETRIC = True
 TREE = False
+ONLY_LATENT = False
 
 if SYMMETRIC:
     PREFIX = "symmetric_" + PREFIX
@@ -455,7 +457,7 @@ if TRAIN:
             patience=8,
             patience_min_delta=0.0001,
             reuse_initial_decoder_for_final_layer=True,
-            scheduler_class=torch.optim.lr_schedule.CosineAnnealingLR,
+            scheduler_class=torch.optim.lr_scheduler.CosineAnnealingLR,
             scheduler_kwargs={"T_max": 100}
             **trainer_kwargs
         )
@@ -612,7 +614,7 @@ if TRAIN:
             print("\nTraining interrupted.")
             print("Using current network state for gradient viewer.")
 
-if not TRAIN and SYMMETRIC:
+if not TRAIN and SYMMETRIC and not ONLY_LATENT:
     print("Executing one symmetric training test loop...")
 
     trainer_kwargs = {}
@@ -639,6 +641,14 @@ if not TRAIN and SYMMETRIC:
     )
 
     metrics = symmetric_trainer.test(test_loader=te_dl, plot=True)
+
+if ONLY_LATENT:
+    app, bundle = LA.main(
+        model=net,
+        dataset=te_ds,
+        samples=10,
+        seed=1337
+    )
 
 out_dir = f"gradient_trace/{PREFIX + net.name}/"
 
