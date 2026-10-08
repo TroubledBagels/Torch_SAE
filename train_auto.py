@@ -457,10 +457,14 @@ if TRAIN:
             patience=8,
             patience_min_delta=0.0001,
             reuse_initial_decoder_for_final_layer=True,
-            scheduler_class=torch.optim.lr_scheduler.CosineAnnealingLR,
-            scheduler_kwargs={"T_max": 100}
+            # scheduler_class=torch.optim.lr_scheduler.CosineAnnealingLR,
+            # scheduler_kwargs={"T_max": 100}
+            scheduler_class=torch.optim.lr_scheduler.ReduceLROnPlateau,
+            scheduler_kwargs={"patience": 5, "factor": 0.5, "min_lr": 1e-6},
             **trainer_kwargs
         )
+
+        PREFIX += f"{symmetric_trainer.scheduler_class.__name__}_"
 
         inputs, _ = next(iter(tr_dl))
         inputs = inputs.to(device)
