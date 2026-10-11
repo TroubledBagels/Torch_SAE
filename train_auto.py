@@ -13,6 +13,7 @@ from utils import DECOLLE as DC
 from utils import SymmetricTrainer as ST
 from utils import TreeTrainer as TT
 from utils import LatentAnalysis as LA
+from utils import SHDDataset as SHD
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -308,7 +309,8 @@ DELAY = 0
 PREFIX = "" if DELAY == 0 else f"DELAY_{DELAY}_"
 
 home = pathlib.Path("~").expanduser()
-local_dir = home / "data" / "URBAN-SED"
+# local_dir = home / "data" / "URBAN-SED"
+local_dir = home / "data" / "shd" / "SHD"
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -323,18 +325,23 @@ a_transform = transforms.Compose([
 
 # tr_ds = GD.SinWaveDS(channels=20, timesteps=1000, wavelength=100, num_samples=500)
 # te_ds = GD.SinWaveDS(channels=20, timesteps=1000, wavelength=100, num_samples=100)
-#
-if device == torch.device('cpu'):
-    tr_ds = edd.URBANDataset(local_dir, split=edd.DatasetSplit.TRAIN, transform=a_transform)
-    te_ds = edd.URBANDataset(local_dir, split=edd.DatasetSplit.TEST, transform=a_transform)
-elif device == torch.device('cuda:0'):
-    tr_ds = edd.URBANDatasetGPU(local_dir, split=edd.DatasetSplit.TRAIN, transform=a_transform, device=device)
-    te_ds = edd.URBANDatasetGPU(local_dir, split=edd.DatasetSplit.TEST, transform=a_transform, device=device)
-else:
-    raise ValueError(f"Unsupported device: {device}")
+
+# if device == torch.device('cpu'):
+#     tr_ds = edd.URBANDataset(local_dir, split=edd.DatasetSplit.TRAIN, transform=a_transform)
+#     te_ds = edd.URBANDataset(local_dir, split=edd.DatasetSplit.TEST, transform=a_transform)
+# elif device == torch.device('cuda:0'):
+#     tr_ds = edd.URBANDatasetGPU(local_dir, split=edd.DatasetSplit.TRAIN, transform=a_transform, device=device)
+#     te_ds = edd.URBANDatasetGPU(local_dir, split=edd.DatasetSplit.TEST, transform=a_transform, device=device)
+# else:
+#     raise ValueError(f"Unsupported device: {device}")
+
+tr_ds = SHD.SHDDataset(local_dir, train=True)
+te_ds = SHD.SHDDataset(local_dir, train=False)
 
 if isinstance(tr_ds, edd.URBANDataset) or isinstance(te_ds, edd.URBANDatasetGPU):
     PREFIX += "urban_"
+elif isinstance(tr_ds, SHD.SHDDataset):
+    PREFIX += "shd_"
 
 tr_dl = torch.utils.data.DataLoader(tr_ds, batch_size=32, shuffle=True)
 te_dl = torch.utils.data.DataLoader(te_ds, batch_size=32, shuffle=False)
@@ -342,7 +349,8 @@ te_dl = torch.utils.data.DataLoader(te_ds, batch_size=32, shuffle=False)
 # net = N.SingleLayerAutoencoder(20, 15)
 # net = N.SingleLayerAutoencoderTrainable(20, 8)
 # net = N.MultilayerAETrainable(20, [16, 12, 8])
-net = N.MultilayerAETrainable(20, [16, 12])
+# net = N.MultilayerAETrainable(20, [16, 12])
+net = N.SingleLayerAutoencoderTrainable(700, 70)
 # net = N.UNetSpikingAutoencoder(
 #     input_size=20,
 #     hidden_sizes=[32, 15],
@@ -374,13 +382,13 @@ net = N.MultilayerAETrainable(20, [16, 12])
 # net.decoder.weight.data = net.decoder.weight.data * 10
 
 # net.load_state_dict(torch.load(f"output_models/{PREFIX + net.name}.pth"))
-net.load_state_dict(torch.load("output_models/symmetric_urban__20_16_12_16_20MultilayerAETrainable.pth"))
+# net.load_state_dict(torch.load("output_models/symmetric_urban__20_16_12_16_20MultilayerAETrainable.pth"))
 
 TRAIN = True
-MULTILAYER = True
+MULTILAYER = False
 LOAD = True
 DECOLLE = False
-SYMMETRIC = True
+SYMMETRIC = False
 TREE = False
 ONLY_LATENT = False
 
@@ -425,7 +433,7 @@ if LOAD:
         PREFIX += f"{dimensions}_"
 
     else:
-        folder = f"pretrained_weights/{PREFIX}single_autoencoder_20_8"
+        folder = f"pretrained_weights/{PREFIX}single_autoencoder_700_70"
 
         load_pretrained_layers(
             net=net,

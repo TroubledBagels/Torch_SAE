@@ -14,5 +14,6 @@ dependencies = [
     "tqdm",
     "speech2spikes",
     "torchcodec",
-    "soundfile"
+    "soundfile",
+    "h5py"
 ]
