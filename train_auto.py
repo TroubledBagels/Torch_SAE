@@ -304,8 +304,8 @@ def generate_gradient_view(model, test_loader, output_dir, loss_mode, device):
 
 DELAY = 0
 PREFIX = "" if DELAY == 0 else f"DELAY_{DELAY}_"
-# DATASET = "urban"
-DATASET = "shd"
+DATASET = "urban"
+# DATASET = "shd"
 
 home = pathlib.Path("~").expanduser()
 if DATASET == "urban":
@@ -352,9 +352,9 @@ te_dl = torch.utils.data.DataLoader(te_ds, batch_size=32, shuffle=False)
 
 # net = N.SingleLayerAutoencoder(20, 15)
 # net = N.SingleLayerAutoencoderTrainable(20, 8)
-# net = N.MultilayerAETrainable(20, [16, 12, 8])
+net = N.MultilayerAETrainable(20, [16, 12, 8])
 # net = N.MultilayerAETrainable(20, [16, 12])
-net = N.SingleLayerAutoencoderTrainable(700, 70)
+# net = N.SingleLayerAutoencoderTrainable(700, 70)
 # net = N.UNetSpikingAutoencoder(
 #     input_size=20,
 #     hidden_sizes=[32, 15],
@@ -389,10 +389,10 @@ net = N.SingleLayerAutoencoderTrainable(700, 70)
 # net.load_state_dict(torch.load("output_models/symmetric_urban__20_16_12_16_20MultilayerAETrainable.pth"))
 
 TRAIN = True
-MULTILAYER = False
+MULTILAYER = True
 LOAD = True
 DECOLLE = False
-SYMMETRIC = False
+SYMMETRIC = True
 TREE = False
 ONLY_LATENT = False
 
