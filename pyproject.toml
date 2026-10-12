@@ -15,5 +15,6 @@ dependencies = [
     "speech2spikes",
     "torchcodec",
     "soundfile",
-    "h5py"
+    "h5py",
+    "dash"
 ]
