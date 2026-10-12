@@ -16,5 +16,6 @@ dependencies = [
     "torchcodec",
     "soundfile",
     "h5py",
-    "dash"
+    "dash",
+    "scikit-learn"
 ]

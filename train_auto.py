@@ -14,11 +14,8 @@ from utils import SymmetricTrainer as ST
 from utils import TreeTrainer as TT
 from utils import LatentAnalysis as LA
 from utils import SHDDataset as SHD
-
 import warnings
 warnings.filterwarnings("ignore")
-
-
 import re
 import numpy as np
 import torch
@@ -307,10 +304,14 @@ def generate_gradient_view(model, test_loader, output_dir, loss_mode, device):
 
 DELAY = 0
 PREFIX = "" if DELAY == 0 else f"DELAY_{DELAY}_"
+DATASET = "urban"
+# DATASET = "shd"
 
 home = pathlib.Path("~").expanduser()
-# local_dir = home / "data" / "URBAN-SED"
-local_dir = home / "data" / "shd" / "SHD"
+if DATASET == "urban":
+    local_dir = home / "data" / "URBAN-SED"
+elif DATASET == "shd":
+    local_dir = home / "data" / "shd" / "SHD"
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -326,17 +327,20 @@ a_transform = transforms.Compose([
 # tr_ds = GD.SinWaveDS(channels=20, timesteps=1000, wavelength=100, num_samples=500)
 # te_ds = GD.SinWaveDS(channels=20, timesteps=1000, wavelength=100, num_samples=100)
 
-if device == torch.device('cpu'):
-    tr_ds = edd.URBANDataset(local_dir, split=edd.DatasetSplit.TRAIN, transform=a_transform)
-    te_ds = edd.URBANDataset(local_dir, split=edd.DatasetSplit.TEST, transform=a_transform)
-elif device == torch.device('cuda:0'):
-    tr_ds = edd.URBANDatasetGPU(local_dir, split=edd.DatasetSplit.TRAIN, transform=a_transform, device=device)
-    te_ds = edd.URBANDatasetGPU(local_dir, split=edd.DatasetSplit.TEST, transform=a_transform, device=device)
+if DATASET == "urban":
+    if device == torch.device('cpu'):
+        tr_ds = edd.URBANDataset(local_dir, split=edd.DatasetSplit.TRAIN, transform=a_transform)
+        te_ds = edd.URBANDataset(local_dir, split=edd.DatasetSplit.TEST, transform=a_transform)
+    elif device == torch.device('cuda:0'):
+        tr_ds = edd.URBANDatasetGPU(local_dir, split=edd.DatasetSplit.TRAIN, transform=a_transform, device=device)
+        te_ds = edd.URBANDatasetGPU(local_dir, split=edd.DatasetSplit.TEST, transform=a_transform, device=device)
+    else:
+        raise ValueError(f"Unsupported device: {device}")
+elif DATASET == "shd":
+    tr_ds = SHD.SHDDataset(local_dir, train=True)
+    te_ds = SHD.SHDDataset(local_dir, train=False)
 else:
-    raise ValueError(f"Unsupported device: {device}")
-
-# tr_ds = SHD.SHDDataset(local_dir, train=True)
-# te_ds = SHD.SHDDataset(local_dir, train=False)
+    raise ValueError(f"Unsupported dataset: {DATASET}")
 
 if isinstance(tr_ds, edd.URBANDataset) or isinstance(te_ds, edd.URBANDatasetGPU):
     PREFIX += "urban_"

@@ -12,6 +12,7 @@ import torchaudio.functional as F
 import random
 import soundfile as sf
 
+
 def load_audio(path):
     """
     Drop-in replacement for torchaudio.load for ordinary audio files.
@@ -32,6 +33,7 @@ def load_audio(path):
 
     return waveform, sample_rate
 
+
 def exp_filter(spikes: torch.Tensor, tau: float, dt: float = 1.0):
     B, T = spikes.shape
 
@@ -51,6 +53,7 @@ def exp_filter(spikes: torch.Tensor, tau: float, dt: float = 1.0):
         y[:, t] = y_prev
 
     return y
+
 
 def van_rossum_3d(
         spike_pred: torch.Tensor,
@@ -88,6 +91,7 @@ def van_rossum_3d(
         return dist
     else:
         raise ValueError("reduction must be 'mean', 'sum', or 'none'")
+
 
 def van_rossum_loss(
         spike_pred: torch.Tensor,
@@ -136,6 +140,7 @@ class TUTSection(enum.Enum):
     def __str__(self):
         return self.value
 
+
 class DatasetSplit(enum.Enum):
     TRAIN = 'train'
     VALID = 'valid'
@@ -145,8 +150,10 @@ class DatasetSplit(enum.Enum):
     def __str__(self):
         return self.value
 
+
 class TUTDataset(Dataset):
-    def __init__(self, root, transform=None, sec: TUTSection=TUTSection.HOME, split: DatasetSplit=DatasetSplit.TRAIN):
+    def __init__(self, root, transform=None, sec: TUTSection = TUTSection.HOME,
+                 split: DatasetSplit = DatasetSplit.TRAIN):
         self.root = pathlib.Path(root)
         self.transform = transform
         # if sec == TUTSection.ALL:
@@ -258,8 +265,10 @@ def spike_conversion_s2s(ann_df, audio, sr=16000):
         spikes[onset_sample:offset_sample] = 1.0
     return spikes
 
+
 class URBANDataset(Dataset):
-    def __init__(self, root, split: DatasetSplit=DatasetSplit.TRAIN, transform=None, random_chunking=False, only_background=False):
+    def __init__(self, root, split: DatasetSplit = DatasetSplit.TRAIN, transform=None, random_chunking=False,
+                 only_background=False):
         self.root = pathlib.Path(root)
         self.transform = transform
         self.split = split
@@ -273,7 +282,7 @@ class URBANDataset(Dataset):
         self.file_list = self.file_list[:1000]
         self.random_chunking = random_chunking
         self.only_background = only_background
-        
+
         self.use_torch_audio = True
 
     def __len__(self):
@@ -299,7 +308,8 @@ class URBANDataset(Dataset):
 
         waveform = waveform.squeeze(0)  # Assuming mono audio
 
-        ann_df = pd.read_csv(ann_file, sep='\t', header=None, names=['onset', 'offset', 'event_label'], dtype={'onset': float, 'offset': float, 'event_label': str})
+        ann_df = pd.read_csv(ann_file, sep='\t', header=None, names=['onset', 'offset', 'event_label'],
+                             dtype={'onset': float, 'offset': float, 'event_label': str})
 
         if self.transform is not None:
             for t in self.transform.transforms:
@@ -340,7 +350,7 @@ class URBANDataset(Dataset):
                                 waveform = t(waveform)
                     return waveform, spikes
 
-            spikes = spike_conversion(ann_df, waveform, sr=sr, spectrogram=True, hop_length=512/16000)
+            spikes = spike_conversion(ann_df, waveform, sr=sr, spectrogram=True, hop_length=512 / 16000)
             waveform = waveform.permute(1, 0)
         else:
             spikes = spike_conversion(ann_df, waveform, sr=sr, spectrogram=False)
@@ -348,8 +358,8 @@ class URBANDataset(Dataset):
         waveform_tensor = torch.zeros([10, waveform.shape[0], 100], dtype=waveform.dtype)
         if self.random_chunking:
             for i in range(10):
-                lb = random.randint(0, waveform.shape[1]-100)
-                waveform_tensor[i, :] = waveform[:, lb:lb+100]
+                lb = random.randint(0, waveform.shape[1] - 100)
+                waveform_tensor[i, :] = waveform[:, lb:lb + 100]
 
             waveform_tensor = waveform_tensor.permute(0, 2, 1)
             return waveform_tensor, torch.empty([1])
@@ -389,15 +399,16 @@ class URBANDataset(Dataset):
             raise IndexError("File number out of range")
         return self.file_list.index(self.audio_path / f"soundscape_train_bimodal{str(file_num)}.wav")
 
+
 class URBANDatasetGPU(URBANDataset):
     def __init__(
-        self,
-        root,
-        split: DatasetSplit=DatasetSplit.TRAIN,
-        transform=None,
-        random_chunking=False,
-        only_background=False,
-        device=None
+            self,
+            root,
+            split: DatasetSplit = DatasetSplit.TRAIN,
+            transform=None,
+            random_chunking=False,
+            only_background=False,
+            device=None
     ):
         super(URBANDatasetGPU, self).__init__(
             root=root,
@@ -446,8 +457,9 @@ class URBANDatasetGPU(URBANDataset):
     def __getitem__(self, idx, t_idx=False):
         return self.gpu_waveforms[idx], self.gpu_spikes[idx]
 
+
 class DataSEDDataset(Dataset):
-    def __init__(self, root, split: DatasetSplit=DatasetSplit.TRAIN, transform=None):
+    def __init__(self, root, split: DatasetSplit = DatasetSplit.TRAIN, transform=None):
         self.root = pathlib.Path(root)
         self.transform = transform
         self.split = split
@@ -464,7 +476,6 @@ class DataSEDDataset(Dataset):
         self.file_list.sort()
 
         self.use_torch_audio = True
-
 
     def __len__(self):
         return len(self.file_list)
@@ -493,7 +504,8 @@ class DataSEDDataset(Dataset):
             self.ann_path,
             sep=',',
             names=['sound_name', 'class_name', 'start_perc', 'end_perc', 'start_time', 'end_time', 'event_length'],
-            dtype={'sound_name': str, 'class_name': str, 'start_perc': float, 'end_perc': float, 'start_time': float, 'end_time': float, 'event_length': float},
+            dtype={'sound_name': str, 'class_name': str, 'start_perc': float, 'end_perc': float, 'start_time': float,
+                   'end_time': float, 'event_length': float},
             header=0
         )
 
@@ -538,17 +550,23 @@ class DataSEDDataset(Dataset):
 
 
 class TUT2017Dataset(Dataset):
-    def __init__(self, root, split: DatasetSplit=DatasetSplit.TRAIN, transform=None, spk_args=None, only_class=None):
+    def __init__(self, root, split: DatasetSplit = DatasetSplit.TRAIN, transform=None, spk_args=None, only_class=None):
         self.label_strings = ["babycry", "glassbreak", "gunshot"]
 
         self.root = pathlib.Path(root)
         self.transform = transform
         self.split = split
-        self.audio_path = self.root / ("dev"+str(split)) / "audio"
-        self.ann_path = self.root / ("dev"+str(split)) / "meta"
-        bc_df = pd.read_csv(self.ann_path / f"event_list_dev{str(split)}_babycry.csv", dtype={"filename": str, "onset": float, "offset": float, "label": str}, delimiter="\t", header=None, names=["filename", "onset", "offset", "label"])
-        gb_df = pd.read_csv(self.ann_path / f"event_list_dev{str(split)}_glassbreak.csv", dtype={"filename": str, "onset": float, "offset": float, "label": str}, delimiter="\t", header=None, names=["filename", "onset", "offset", "label"])
-        gs_df = pd.read_csv(self.ann_path / f"event_list_dev{str(split)}_gunshot.csv", dtype={"filename": str, "onset": float, "offset": float, "label": str}, delimiter="\t", header=None, names=["filename", "onset", "offset", "label"])
+        self.audio_path = self.root / ("dev" + str(split)) / "audio"
+        self.ann_path = self.root / ("dev" + str(split)) / "meta"
+        bc_df = pd.read_csv(self.ann_path / f"event_list_dev{str(split)}_babycry.csv",
+                            dtype={"filename": str, "onset": float, "offset": float, "label": str}, delimiter="\t",
+                            header=None, names=["filename", "onset", "offset", "label"])
+        gb_df = pd.read_csv(self.ann_path / f"event_list_dev{str(split)}_glassbreak.csv",
+                            dtype={"filename": str, "onset": float, "offset": float, "label": str}, delimiter="\t",
+                            header=None, names=["filename", "onset", "offset", "label"])
+        gs_df = pd.read_csv(self.ann_path / f"event_list_dev{str(split)}_gunshot.csv",
+                            dtype={"filename": str, "onset": float, "offset": float, "label": str}, delimiter="\t",
+                            header=None, names=["filename", "onset", "offset", "label"])
         self.label_df = pd.concat([bc_df, gb_df, gs_df], ignore_index=True)
 
         if only_class is not None:
@@ -572,8 +590,6 @@ class TUT2017Dataset(Dataset):
 
         self.only_class = only_class
         self.use_torch_audio = True
-
-
 
     def __len__(self):
         return len(self.file_list)
@@ -634,7 +650,7 @@ class DangMFCC:
                  hop_sec: float = 0.02,
                  n_mfcc: int = 20,
                  n_mels: int = 40,
-                 n_fft = None
+                 n_fft=None
                  ):
         assert n_fft is None or isinstance(n_fft, int)
 
@@ -679,16 +695,23 @@ class DangMFCC:
 
 
 class TUT2017Classes(Dataset):
-    def __init__(self, root, split: DatasetSplit=DatasetSplit.TRAIN, transform=None, transform_2=None, no_neg=False, cut_to_label=True, to_100=True):
+    def __init__(self, root, split: DatasetSplit = DatasetSplit.TRAIN, transform=None, transform_2=None, no_neg=False,
+                 cut_to_label=True, to_100=True):
         self.root = pathlib.Path(root)
         self.transform_1 = transform
         self.transform_2 = transform_2
         self.split = split
-        self.audio_path = self.root / ("dev"+str(split)) / "audio"
-        self.ann_path = self.root / ("dev"+str(split)) / "meta"
-        bc_df = pd.read_csv(self.ann_path / f"event_list_dev{str(split)}_babycry.csv", dtype={"filename": str, "onset": float, "offset": float, "label": str}, delimiter="\t", header=None, names=["filename", "onset", "offset", "label"])
-        gb_df = pd.read_csv(self.ann_path / f"event_list_dev{str(split)}_glassbreak.csv", dtype={"filename": str, "onset": float, "offset": float, "label": str}, delimiter="\t", header=None, names=["filename", "onset", "offset", "label"])
-        gs_df = pd.read_csv(self.ann_path / f"event_list_dev{str(split)}_gunshot.csv", dtype={"filename": str, "onset": float, "offset": float, "label": str}, delimiter="\t", header=None, names=["filename", "onset", "offset", "label"])
+        self.audio_path = self.root / ("dev" + str(split)) / "audio"
+        self.ann_path = self.root / ("dev" + str(split)) / "meta"
+        bc_df = pd.read_csv(self.ann_path / f"event_list_dev{str(split)}_babycry.csv",
+                            dtype={"filename": str, "onset": float, "offset": float, "label": str}, delimiter="\t",
+                            header=None, names=["filename", "onset", "offset", "label"])
+        gb_df = pd.read_csv(self.ann_path / f"event_list_dev{str(split)}_glassbreak.csv",
+                            dtype={"filename": str, "onset": float, "offset": float, "label": str}, delimiter="\t",
+                            header=None, names=["filename", "onset", "offset", "label"])
+        gs_df = pd.read_csv(self.ann_path / f"event_list_dev{str(split)}_gunshot.csv",
+                            dtype={"filename": str, "onset": float, "offset": float, "label": str}, delimiter="\t",
+                            header=None, names=["filename", "onset", "offset", "label"])
         self.label_df = pd.concat([bc_df, gb_df, gs_df], ignore_index=True)
         self.file_list = []
         for idx, file in enumerate(sorted(os.listdir(self.audio_path))):
@@ -746,7 +769,7 @@ class TUT2017Classes(Dataset):
                 return waveform, -1, -1
 
             min_sample = int((ann_df['onset'].min() / hop_length)) - 5
-            max_sample = int((ann_df['offset'].max() / hop_length))+ 5
+            max_sample = int((ann_df['offset'].max() / hop_length)) + 5
             # print(ann_df['onset'].min(), ann_df['offset'].min(), sr, hop_length)
             # print(min_sample, max_sample)
             if min_sample < 0:
@@ -755,7 +778,6 @@ class TUT2017Classes(Dataset):
                 max_sample = waveform.shape[0]
 
             return waveform[min_sample:max_sample], min_sample, max_sample
-
 
         if self.transform_1 is not None:
             for t in self.transform_1.transforms:
@@ -809,12 +831,12 @@ class TUT2017Classes(Dataset):
                 each_end = diff // 2
                 # print(onset)
                 # print(each_end)
-                if onset-each_end < 0:
+                if onset - each_end < 0:
                     onset = each_end
                 if onset - each_end + 100 > waveform.shape[0]:
                     onset = waveform.shape[0] + each_end - 100
-                waveform_c = waveform[onset-each_end:onset-each_end+100]
-                waveform_2_c = waveform_2[onset-each_end:onset-each_end+100]
+                waveform_c = waveform[onset - each_end:onset - each_end + 100]
+                waveform_2_c = waveform_2[onset - each_end:onset - each_end + 100]
 
                 # assert waveform_c.shape[0] == 100
                 # assert waveform_2_c.shape[0] == 100
@@ -828,8 +850,8 @@ class TUT2017Classes(Dataset):
                 else:
                     temp_onset = onset
 
-                waveform_c = waveform[temp_onset:temp_onset+100]
-                waveform_2_c = waveform_2[temp_onset:temp_onset+100]
+                waveform_c = waveform[temp_onset:temp_onset + 100]
+                waveform_2_c = waveform_2[temp_onset:temp_onset + 100]
 
             # assert waveform_c.shape[0] == 100
             if waveform_c.shape[0] != 100:
@@ -848,10 +870,23 @@ class UnsqueezeTransform:
     def __call__(self, x):
         return x.unsqueeze(self.dim)
 
+
 class ToSpikeTransform:
     def __init__(self, num_channels=20):
         self.spk_transform = s2s.S2S()
-        self.spk_transform.configure(n_mels=num_channels)
+        try:
+            self.spk_transform.configure(n_mels=num_channels)
+        except TypeError as exc:
+            # Older speech2spikes versions pass spec_kwargs as a positional dict.
+            if "unsupported operand type(s) for //" not in str(exc):
+                raise
+            spec_kwargs = {
+                **self.spk_transform._default_spec_kwargs,
+                "n_mels": num_channels,
+            }
+            self.spk_transform.transform = torchaudio.transforms.MelSpectrogram(
+                **spec_kwargs
+            )
 
     def __call__(self, x):
         transformed = self.spk_transform([(x, torch.zeros(x.shape[1]))])[0]
@@ -865,6 +900,7 @@ class ToSpikeTransform:
     def transform(self, x):
         return self.__call__(x)
 
+
 class SqueezeTransform:
     def __init__(self, dim=None):
         self.dim = dim
@@ -874,6 +910,7 @@ class SqueezeTransform:
 
     def transform(self, x):
         return self.__call__(x)
+
 
 class MonofyTransform:
     def __init__(self, dim=0):
@@ -890,6 +927,7 @@ class MonofyTransform:
 
     def transform(self, x):
         return self.__call__(x)
+
 
 class ReshapeTransform:
     def __init__(self, *shape):
@@ -943,8 +981,6 @@ class BrownianNoise(Dataset):
         return waveform, waveform_2
 
 
-
-
 if __name__ == "__main__":
     home = pathlib.Path("~").expanduser()
 
@@ -975,6 +1011,8 @@ if __name__ == "__main__":
 
     # Plot raster for each
     import matplotlib.pyplot as plt
+
     for i in range(len(inputs)):
         plt.imshow(inputs[i].T)
         plt.show()
+
