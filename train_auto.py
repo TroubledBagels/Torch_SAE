@@ -326,17 +326,17 @@ a_transform = transforms.Compose([
 # tr_ds = GD.SinWaveDS(channels=20, timesteps=1000, wavelength=100, num_samples=500)
 # te_ds = GD.SinWaveDS(channels=20, timesteps=1000, wavelength=100, num_samples=100)
 
-# if device == torch.device('cpu'):
-#     tr_ds = edd.URBANDataset(local_dir, split=edd.DatasetSplit.TRAIN, transform=a_transform)
-#     te_ds = edd.URBANDataset(local_dir, split=edd.DatasetSplit.TEST, transform=a_transform)
-# elif device == torch.device('cuda:0'):
-#     tr_ds = edd.URBANDatasetGPU(local_dir, split=edd.DatasetSplit.TRAIN, transform=a_transform, device=device)
-#     te_ds = edd.URBANDatasetGPU(local_dir, split=edd.DatasetSplit.TEST, transform=a_transform, device=device)
-# else:
-#     raise ValueError(f"Unsupported device: {device}")
+if device == torch.device('cpu'):
+    tr_ds = edd.URBANDataset(local_dir, split=edd.DatasetSplit.TRAIN, transform=a_transform)
+    te_ds = edd.URBANDataset(local_dir, split=edd.DatasetSplit.TEST, transform=a_transform)
+elif device == torch.device('cuda:0'):
+    tr_ds = edd.URBANDatasetGPU(local_dir, split=edd.DatasetSplit.TRAIN, transform=a_transform, device=device)
+    te_ds = edd.URBANDatasetGPU(local_dir, split=edd.DatasetSplit.TEST, transform=a_transform, device=device)
+else:
+    raise ValueError(f"Unsupported device: {device}")
 
-tr_ds = SHD.SHDDataset(local_dir, train=True)
-te_ds = SHD.SHDDataset(local_dir, train=False)
+# tr_ds = SHD.SHDDataset(local_dir, train=True)
+# te_ds = SHD.SHDDataset(local_dir, train=False)
 
 if isinstance(tr_ds, edd.URBANDataset) or isinstance(te_ds, edd.URBANDatasetGPU):
     PREFIX += "urban_"
@@ -385,10 +385,10 @@ net = N.SingleLayerAutoencoderTrainable(700, 70)
 # net.load_state_dict(torch.load("output_models/symmetric_urban__20_16_12_16_20MultilayerAETrainable.pth"))
 
 TRAIN = True
-MULTILAYER = False
+MULTILAYER = True
 LOAD = True
 DECOLLE = False
-SYMMETRIC = False
+SYMMETRIC = True
 TREE = False
 ONLY_LATENT = False
 
