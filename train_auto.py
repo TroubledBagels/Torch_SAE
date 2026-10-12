@@ -348,9 +348,9 @@ te_dl = torch.utils.data.DataLoader(te_ds, batch_size=32, shuffle=False)
 
 # net = N.SingleLayerAutoencoder(20, 15)
 # net = N.SingleLayerAutoencoderTrainable(20, 8)
-# net = N.MultilayerAETrainable(20, [16, 12, 8])
+net = N.MultilayerAETrainable(20, [16, 12, 8])
 # net = N.MultilayerAETrainable(20, [16, 12])
-net = N.SingleLayerAutoencoderTrainable(700, 70)
+# net = N.SingleLayerAutoencoderTrainable(700, 70)
 # net = N.UNetSpikingAutoencoder(
 #     input_size=20,
 #     hidden_sizes=[32, 15],
