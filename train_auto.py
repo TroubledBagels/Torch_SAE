@@ -470,7 +470,7 @@ if TRAIN:
             patience_min_delta=0.0001,
             reuse_initial_decoder_for_final_layer=True,
             scheduler_class=torch.optim.lr_scheduler.CosineAnnealingLR,
-            scheduler_kwargs={"T_max": 100}
+            scheduler_kwargs={"T_max": 100},
             # scheduler_class=torch.optim.lr_scheduler.ReduceLROnPlateau,
             # scheduler_kwargs={"patience": 5, "factor": 0.5, "min_lr": 1e-6},
             # scheduler_class=torch.optim.lr_scheduler.StepLR,
