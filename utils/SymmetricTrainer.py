@@ -283,6 +283,9 @@ class ProgressiveSpikingAutoencoderTrainer:
         self._validate_architecture()
         self.stages = self._build_stages()
 
+        if scheduler_class is not None:
+            print(f"Scheduler class: {scheduler_class.__name__}")
+
     @staticmethod
     def _normalise_patience_metric(metric):
         """
