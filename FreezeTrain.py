@@ -112,28 +112,118 @@ def van_rossum_loss(pred_spikes, target_spikes, tau=10.0):
 
     return F.mse_loss(pred_trace, target_trace)
 
-def van_rossum_loss_count(pred_spikes, target_spikes, tau=10.0, count_weight=1.0):
-    alpha = torch.exp(torch.tensor(-1.0 / tau, device=pred_spikes.device))
+def _causal_exp_trace(spikes, tau):
+    """
+    Causal exponentially decaying spike trace.
+    Time is the final dimension.
 
-    pred_trace = torch.zeros_like(pred_spikes)
-    target_trace = torch.zeros_like(target_spikes)
+    Uses FFT convolution instead of a timestep loop.
+    """
+    T = spikes.shape[-1]
 
-    pred_trace[..., 0] = pred_spikes[..., 0]
-    target_trace[..., 0] = target_spikes[..., 0]
+    nfft = 1 << (2 * T - 2).bit_length()
 
-    for t in range(1, pred_spikes.shape[-1]):
-        pred_trace[..., t] = alpha * pred_trace[..., t - 1] + pred_spikes[..., t]
-        target_trace[..., t] = alpha * target_trace[..., t - 1] + target_spikes[..., t]
+    t = torch.arange(
+        T, device=spikes.device, dtype=spikes.dtype
+    )
 
-    vr_loss = F.mse_loss(pred_trace, target_trace)
+    kernel = torch.exp(-t / tau)
 
-    pred_count = pred_spikes.sum(dim=-1)
-    target_count = target_spikes.sum(dim=-1)
+    spike_fft = torch.fft.rfft(
+        spikes, n=nfft, dim=-1
+    )
 
-    timesteps = pred_spikes.shape[-1]
-    count_loss = F.mse_loss(pred_count / timesteps, target_count / timesteps)
+    kernel_fft = torch.fft.rfft(
+        kernel, n=nfft
+    )
+
+    trace = torch.fft.irfft(
+        spike_fft * kernel_fft,
+        n=nfft,
+        dim=-1
+    )[..., :T]
+
+    # Cap eligibility at 1, preventing overlapping
+    # target traces from giving excess matching credit.
+    return trace.clamp(0.0, 1.0)
+
+
+def van_rossum_loss_count(
+    pred_spikes,
+    target_spikes,
+    tau=10.0,
+    count_weight=1.0
+):
+    """
+    One-sided causal van Rossum-style matching loss.
+
+    Only predictions at or after a target spike
+    receive matching credit.
+
+    Input shape: (..., timesteps)
+    Supports CPU and CUDA.
+    """
+
+    if tau <= 0:
+        raise ValueError("tau must be positive")
+
+    if pred_spikes.shape != target_spikes.shape:
+        raise ValueError("Input shapes must match")
+
+    if pred_spikes.shape[-1] == 0:
+        raise ValueError("Spike trains cannot be empty")
+
+    dtype = (
+        torch.float64
+        if pred_spikes.dtype == torch.float64
+        else torch.float32
+    )
+
+    pred = pred_spikes.to(dtype=dtype)
+
+    target = target_spikes.to(
+        device=pred.device, dtype=dtype
+    )
+
+    # Past target spikes can reward predictions now.
+    target_past = _causal_exp_trace(target, tau)
+
+    # Future predictions can satisfy targets now.
+    pred_future = _causal_exp_trace(
+        pred.flip(-1), tau
+    ).flip(-1)
+
+    # Penalize predictions without preceding targets.
+    false_loss = (
+        pred * (1.0 - target_past)
+    ).sum(dim=-1)
+
+    # Penalize targets without subsequent predictions.
+    missed_loss = (
+        target * (1.0 - pred_future)
+    ).sum(dim=-1)
+
+    pred_count = pred.sum(dim=-1)
+    target_count = target.sum(dim=-1)
+
+    normalizer = (
+        pred_count + target_count
+    ).clamp_min(1.0)
+
+    vr_loss = (
+        (false_loss + missed_loss) / normalizer
+    ).mean()
+
+    # Original spike-count penalty.
+    timesteps = pred.shape[-1]
+
+    count_loss = F.mse_loss(
+        pred_count / timesteps,
+        target_count / timesteps
+    )
 
     return vr_loss + count_weight * count_loss
+
 
 def reconstruction_metrics(outputs, targets):
     outputs = outputs.reshape(outputs.size(0), -1)

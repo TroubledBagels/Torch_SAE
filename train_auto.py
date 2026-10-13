@@ -20,7 +20,7 @@ import re
 import numpy as np
 import torch
 from pathlib import Path
-
+import sys
 
 def load_pretrained_layers(net, folder, device):
     """
@@ -301,6 +301,15 @@ def generate_gradient_view(model, test_loader, output_dir, loss_mode, device):
 
     return paths
 
+scheduler = None
+
+flags = sys.argv[1:]
+if "-c" in flags:
+    scheduler = "cos"
+elif "-s" in flags:
+    scheduler = "step"
+elif "-p" in flags:
+    scheduler = "plateau"
 
 DELAY = 0
 PREFIX = "" if DELAY == 0 else f"DELAY_{DELAY}_"
@@ -461,6 +470,19 @@ if TRAIN:
             else:
                 raise AttributeError("Single-layer network needs lif1/lif2 or rlif1/rlif2 neuron attributes for SymmetricTrainer.")
 
+        scheduler_args = None
+        scheduler_class = None
+
+        if scheduler == "cos":
+            scheduler_class = torch.optim.lr_scheduler.CosineAnnealingLR
+            scheduler_kwargs = {"T_max": 50}
+        elif scheduler == "plateau":
+            scheduler_class=torch.optim.lr_scheduler.ReduceLROnPlateau
+            scheduler_kwargs={"patience": 5, "factor": 0.5, "min_lr": 1e-6}
+        elif scheduler == "step":
+            scheduler_class=torch.optim.lr_scheduler.StepLR
+            scheduler_kwargs={"step_size": 1, "gamma": 0.5}
+
         symmetric_trainer = ST.ProgressiveSpikingAutoencoderTrainer(
             model=net,
             loss_fn=loss_fn,
@@ -470,7 +492,7 @@ if TRAIN:
             patience_min_delta=0.0001,
             reuse_initial_decoder_for_final_layer=False,
             scheduler_class=torch.optim.lr_scheduler.CosineAnnealingLR,
-            scheduler_kwargs={"T_max": 100},
+            scheduler_kwargs={"T_max": 50},
             # scheduler_class=torch.optim.lr_scheduler.ReduceLROnPlateau,
             # scheduler_kwargs={"patience": 5, "factor": 0.5, "min_lr": 1e-6},
             # scheduler_class=torch.optim.lr_scheduler.StepLR,
