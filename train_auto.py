@@ -468,7 +468,7 @@ if TRAIN:
             lr=1e-3,
             patience=8,
             patience_min_delta=0.0001,
-            reuse_initial_decoder_for_final_layer=True,
+            reuse_initial_decoder_for_final_layer=False,
             scheduler_class=torch.optim.lr_scheduler.CosineAnnealingLR,
             scheduler_kwargs={"T_max": 100},
             # scheduler_class=torch.optim.lr_scheduler.ReduceLROnPlateau,
