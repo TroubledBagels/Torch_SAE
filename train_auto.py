@@ -313,8 +313,8 @@ elif "-p" in flags:
 
 DELAY = 0
 PREFIX = "" if DELAY == 0 else f"DELAY_{DELAY}_"
-DATASET = "urban"
-# DATASET = "shd"
+# DATASET = "urban"
+DATASET = "shd"
 
 home = pathlib.Path("~").expanduser()
 if DATASET == "urban":
@@ -361,7 +361,8 @@ te_dl = torch.utils.data.DataLoader(te_ds, batch_size=32, shuffle=False)
 
 # net = N.SingleLayerAutoencoder(20, 15)
 # net = N.SingleLayerAutoencoderTrainable(20, 8)
-net = N.MultilayerAETrainable(20, [16, 12, 8])
+# net = N.MultilayerAETrainable(20, [16, 12, 8])
+net = N.MultilayerAETrainable(700, [222, 70])
 # net = N.MultilayerAETrainable(20, [16, 12])
 # net = N.SingleLayerAutoencoderTrainable(700, 70)
 # net = N.UNetSpikingAutoencoder(
@@ -399,7 +400,7 @@ net = N.MultilayerAETrainable(20, [16, 12, 8])
 
 TRAIN = True
 MULTILAYER = True
-LOAD = True
+LOAD = False
 DECOLLE = False
 SYMMETRIC = True
 TREE = False
@@ -453,6 +454,18 @@ if LOAD:
             folder=folder,
             device=device,
         )
+else:
+    if isinstance(net, N.MultilayerAETrainable):
+        for layer in net.encoder.layers:
+            layer.weight.data = layer.weight.data * 10.0
+            layer.bias.data = layer.bias.data * 10.0
+        for layer in net.decoder.layers:
+            layer.weight.data = layer.weight.data * 10.0
+            layer.bias.data = layer.bias.data * 10.0
+    else:
+        net.encoder.weight.data = net.encoder.weight.data * 10.0
+        net.decoder.weight.data = net.decoder.weight.data * 10.0
+
 training_interrupted = False
 
 if TRAIN:
