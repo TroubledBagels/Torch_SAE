@@ -346,8 +346,12 @@ if DATASET == "urban":
     else:
         raise ValueError(f"Unsupported device: {device}")
 elif DATASET == "shd":
-    tr_ds = SHD.SHDDataset(local_dir, train=True)
-    te_ds = SHD.SHDDataset(local_dir, train=False)
+    if device == torch.device('cpu'):
+        tr_ds = SHD.SHDDataset(local_dir, train=True)
+        te_ds = SHD.SHDDataset(local_dir, train=False)
+    elif device == torch.device('cuda:0'):
+        tr_ds = SHD.SHDDataset(local_dir, train=True, device=device)
+        te_ds = SHD.SHDDataset(local_dir, train=True, device=device)
 else:
     raise ValueError(f"Unsupported dataset: {DATASET}")
 

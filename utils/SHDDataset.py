@@ -5,7 +5,7 @@ import numpy as np
 import math
 
 class SHDDataset(Dataset):
-    def __init__(self, root, transform=None, train=True, t_bin_size=0.001, transpose=True):
+    def __init__(self, root, transform=None, train=True, t_bin_size=0.001, transpose=True, device='cpu'):
         super(SHDDataset, self).__init__()
         self.root = root
         self.transform = transform
@@ -43,6 +43,9 @@ class SHDDataset(Dataset):
 
         if transpose:
             self.data = self.data.permute(0, 2, 1)
+
+        self.data = self.data.to(device)
+        self.labels = self.labels.to(device)
 
         '''
         self.times is an array of floats containing the time in seconds of their corresponding spike
