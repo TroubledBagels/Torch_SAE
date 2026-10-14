@@ -316,6 +316,11 @@ PREFIX = "" if DELAY == 0 else f"DELAY_{DELAY}_"
 # DATASET = "urban"
 DATASET = "shd"
 
+if "-urban" in flags:
+    DATASET = "urban"
+elif "-shd" in flags:
+    DATASET = "shd"
+
 home = pathlib.Path("~").expanduser()
 if DATASET == "urban":
     local_dir = home / "data" / "URBAN-SED"
@@ -365,8 +370,10 @@ te_dl = torch.utils.data.DataLoader(te_ds, batch_size=32, shuffle=False)
 
 # net = N.SingleLayerAutoencoder(20, 15)
 # net = N.SingleLayerAutoencoderTrainable(20, 8)
-# net = N.MultilayerAETrainable(20, [16, 12, 8])
-net = N.MultilayerAETrainable(700, [222, 70])
+if "-urban" in flags:
+    net = N.MultilayerAETrainable(20, [16, 12, 8])
+if "-shd" in flags:
+    net = N.MultilayerAETrainable(700, [222, 70])
 # net = N.MultilayerAETrainable(20, [16, 12])
 # net = N.SingleLayerAutoencoderTrainable(700, 70)
 # net = N.UNetSpikingAutoencoder(
