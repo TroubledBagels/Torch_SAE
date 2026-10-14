@@ -456,10 +456,10 @@ if LOAD:
         )
 else:
     if isinstance(net, N.MultilayerAETrainable):
-        for layer in net.encoder.layers:
+        for layer in net.encoder_layers:
             layer.weight.data = layer.weight.data * 10.0
             layer.bias.data = layer.bias.data * 10.0
-        for layer in net.decoder.layers:
+        for layer in net.decoder_layers:
             layer.weight.data = layer.weight.data * 10.0
             layer.bias.data = layer.bias.data * 10.0
     else:
@@ -513,7 +513,8 @@ if TRAIN:
             **trainer_kwargs
         )
 
-        PREFIX += f"{symmetric_trainer.scheduler_class.__name__}_"
+        if scheduler is not None:
+            PREFIX += f"{symmetric_trainer.scheduler_class.__name__}_"
 
         inputs, _ = next(iter(tr_dl))
         inputs = inputs.to(device)
